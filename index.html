@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="aurora">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Music Lab Studio — Song Maker</title>
+<meta name="description" content="Draw music on a grid. Multi-track sequencing, patterns, effects, WAV/MIDI export. No install, no account.">
+<meta name="color-scheme" content="dark light">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2310121a'/%3E%3Crect x='6' y='13' width='5' height='6' rx='1.5' fill='%23ff6b6b'/%3E%3Crect x='13' y='8' width='5' height='6' rx='1.5' fill='%23ffd166'/%3E%3Crect x='20' y='17' width='5' height='6' rx='1.5' fill='%2306d6a0'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="src/styles.css">
+</head>
+<body>
+
+<div id="app" class="app">
+
+  <!-- ══════════════════ TOP BAR ══════════════════ -->
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+        <rect x="3" y="12" width="6" height="8" rx="2" class="bm1"/>
+        <rect x="12" y="6" width="6" height="14" rx="2" class="bm2"/>
+        <rect x="21" y="15" width="6" height="11" rx="2" class="bm3"/>
+      </svg>
+      <span class="brand-text">Music&nbsp;Lab<b>Studio</b></span>
+    </div>
+
+    <div class="transport" role="group" aria-label="Transport">
+      <button id="btn-play" class="tb tb-play" title="Play / Pause  (Space)" aria-label="Play">
+        <svg viewBox="0 0 24 24" class="i-play"><path d="M8 5.5v13l11-6.5z"/></svg>
+        <svg viewBox="0 0 24 24" class="i-pause"><path d="M8 5h3.2v14H8zM12.8 5H16v14h-3.2z"/></svg>
+      </button>
+      <button id="btn-stop" class="tb" title="Stop  (Enter)" aria-label="Stop">
+        <svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
+      </button>
+      <button id="btn-rec" class="tb tb-rec" title="Record from mic / MIDI / keys  (R)" aria-label="Record" aria-pressed="false">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/></svg>
+      </button>
+      <span class="tsep"></span>
+      <button id="btn-metro" class="tb" title="Metronome  (P)" aria-pressed="false">
+        <svg viewBox="0 0 24 24"><path d="M12 4l5 15H7zM12 9l6 8" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/></svg>
+      </button>
+      <button id="btn-mode" class="tb tb-wide" title="Loop one pattern, or play the whole song">Loop</button>
+      <output id="pos" class="pos" title="Bar . Beat">1<i>.</i>1</output>
+    </div>
+
+    <label class="tempo">
+      <span class="tempo-label">Tempo</span>
+      <input id="tempo" type="range" min="40" max="240" step="1" value="112">
+      <output id="tempo-val">112</output>
+    </label>
+
+    <div class="top-actions">
+      <button id="btn-undo" class="btn ghost" title="Undo  (Ctrl+Z)">
+        <svg viewBox="0 0 24 24"><path d="M9 7H15a5 5 0 010 10H8M9 7L6 4M9 7L6 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button id="btn-redo" class="btn ghost" title="Redo  (Ctrl+Shift+Z)">
+        <svg viewBox="0 0 24 24" style="transform:scaleX(-1)"><path d="M9 7H15a5 5 0 010 10H8M9 7L6 4M9 7L6 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <span class="tsep"></span>
+      <button class="btn ghost" data-panel="settings" title="Song settings  (O)">Settings</button>
+      <button class="btn ghost" data-panel="mixer" title="Mixer &amp; effects  (I)">Mix&nbsp;&amp;&nbsp;FX</button>
+      <button class="btn primary" data-panel="export" title="Save, share and export  (E)">Share</button>
+      <button class="btn ghost icon" data-panel="help" title="Help &amp; shortcuts  (?)">?</button>
+    </div>
+  </header>
+
+  <!-- ══════════════════ MAIN ══════════════════ -->
+  <main class="main">
+    <aside class="rail" id="rail">
+      <div class="rail-head">
+        <span>Tracks</span>
+        <button id="btn-add-track" class="mini-btn" title="Add a track  (T)">+ Add</button>
+      </div>
+      <div class="rail-list" id="rail-list"><!-- built by JS --></div>
+    </aside>
+
+    <section class="stage" id="stage">
+      <canvas id="grid" class="grid-canvas"></canvas>
+      <div class="grid-scroll" id="grid-scroll" tabindex="0" aria-label="Note grid">
+        <div class="grid-spacer" id="grid-spacer"></div>
+      </div>
+      <div class="stage-hint" id="stage-hint">Click the squares to write music</div>
+    </section>
+  </main>
+
+  <!-- ══════════════════ BOTTOM BAR ══════════════════ -->
+  <footer class="bottombar">
+    <div class="bb-group patterns">
+      <span class="bb-label">Pattern</span>
+      <div class="pattern-pills" id="pattern-pills"></div>
+      <button id="btn-pattern-menu" class="mini-btn" title="Copy / clear this pattern">···</button>
+    </div>
+
+    <div class="bb-group song" id="song-group">
+      <span class="bb-label">Song</span>
+      <div class="chain" id="chain"></div>
+      <button id="btn-chain-add" class="mini-btn" title="Add the current pattern to the song">+</button>
+    </div>
+
+    <div class="bb-group tools">
+      <span class="bb-label">Tool</span>
+      <div class="seg" id="tool-seg">
+        <button data-tool="draw" class="on" title="Draw notes  (1)">Draw</button>
+        <button data-tool="erase" title="Erase  (2)">Erase</button>
+        <button data-tool="select" title="Select a region  (3)">Select</button>
+      </div>
+    </div>
+
+    <div class="bb-group gen">
+      <span class="bb-label">Ideas</span>
+      <button class="mini-btn" id="btn-gen" title="Generate a part for the selected track">✨ Generate</button>
+      <select id="gen-style" class="mini-select" title="What to generate">
+        <option value="auto">Auto</option>
+        <option value="euclid">Euclidean beat</option>
+        <option value="fourfloor">Four on the floor</option>
+        <option value="arp">Arpeggio</option>
+        <option value="chords">Chords</option>
+        <option value="bassline">Bassline</option>
+        <option value="melody">Melody</option>
+        <option value="sparkle">Sparkle</option>
+      </select>
+      <button class="mini-btn danger" id="btn-clear-track" title="Clear the selected track in this pattern">Clear</button>
+    </div>
+
+    <div class="bb-group right">
+      <label class="vol-mini" title="Master volume">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M4 10v4h3l4 3V7L7 10zM15.5 9.5a4 4 0 010 5M18 7a7.5 7.5 0 010 10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        <input id="master-vol" type="range" min="0" max="1" step="0.01" value="0.85">
+      </label>
+    </div>
+  </footer>
+</div>
+
+<!-- ══════════════════ PANELS ══════════════════ -->
+<div class="scrim" id="scrim" hidden></div>
+
+<section class="panel" id="panel-settings" hidden aria-label="Song settings">
+  <header class="panel-head"><h2>Song settings</h2><button class="panel-x" data-close>✕</button></header>
+  <div class="panel-body">
+    <div class="field-grid">
+      <label class="field"><span>Scale</span><select id="set-scale"></select></label>
+      <label class="field"><span>Root note</span><select id="set-root"></select></label>
+      <label class="field"><span>Start octave</span><select id="set-octave"></select></label>
+      <label class="field"><span>Octaves</span><select id="set-octaves"></select></label>
+    </div>
+
+    <h3 class="sub">Length &amp; feel</h3>
+    <div class="field-grid">
+      <label class="field"><span>Bars</span><select id="set-bars"></select></label>
+      <label class="field"><span>Beats per bar</span><select id="set-beats"></select></label>
+      <label class="field"><span>Split beats into</span><select id="set-splits"></select></label>
+    </div>
+    <label class="slider-row"><span>Swing</span><input id="set-swing" type="range" min="0" max="0.66" step="0.01"><output id="out-swing">0%</output></label>
+    <label class="slider-row"><span>Humanize</span><input id="set-humanize" type="range" min="0" max="1" step="0.01"><output id="out-humanize">0%</output></label>
+
+    <h3 class="sub">Look</h3>
+    <div class="field-grid">
+      <label class="field"><span>Theme</span><select id="set-theme"></select></label>
+      <label class="field"><span>Note names</span><select id="set-labels">
+        <option value="1">Show</option><option value="0">Hide</option>
+      </select></label>
+    </div>
+    <p class="note">Changing bars, beats or splits keeps your notes — anything past the new end is remembered until you shorten the song again.</p>
+  </div>
+</section>
+
+<section class="panel" id="panel-mixer" hidden aria-label="Mixer and effects">
+  <header class="panel-head"><h2>Mix &amp; FX</h2><button class="panel-x" data-close>✕</button></header>
+  <div class="panel-body">
+    <div id="mixer-strips" class="mixer-strips"></div>
+    <h3 class="sub">Master effects</h3>
+    <label class="slider-row"><span>Reverb</span><input id="fx-reverb" type="range" min="0" max="1" step="0.01"><output id="out-reverb"></output></label>
+    <label class="slider-row"><span>Room size</span><input id="fx-reverb-size" type="range" min="0.3" max="1" step="0.01"><output id="out-reverb-size"></output></label>
+    <label class="slider-row"><span>Delay</span><input id="fx-delay" type="range" min="0" max="1" step="0.01"><output id="out-delay"></output></label>
+    <label class="field inline"><span>Delay time</span><select id="fx-delay-time">
+      <option value="0.5">1/8</option><option value="0.75">1/8 dotted</option><option value="0.3333">1/8 triplet</option>
+      <option value="1">1/4</option><option value="1.5">1/4 dotted</option><option value="2">1/2</option>
+    </select></label>
+    <label class="slider-row"><span>Tone</span><input id="fx-tone" type="range" min="0" max="1" step="0.01"><output id="out-tone"></output></label>
+    <label class="slider-row"><span>Warmth</span><input id="fx-drive" type="range" min="0" max="1" step="0.01"><output id="out-drive"></output></label>
+    <label class="slider-row"><span>Width</span><input id="fx-chorus" type="range" min="0" max="1" step="0.01"><output id="out-chorus"></output></label>
+    <label class="slider-row"><span>Master</span><input id="fx-master" type="range" min="0" max="1" step="0.01"><output id="out-master"></output></label>
+    <button class="btn ghost wide" id="fx-reset">Reset effects</button>
+  </div>
+</section>
+
+<section class="panel" id="panel-export" hidden aria-label="Save, share and export">
+  <header class="panel-head"><h2>Save &amp; share</h2><button class="panel-x" data-close>✕</button></header>
+  <div class="panel-body">
+    <label class="field"><span>Song name</span><input id="song-name" type="text" maxlength="60" placeholder="Untitled song"></label>
+
+    <h3 class="sub">Share a link</h3>
+    <p class="note">The whole song is packed into the link itself — nothing is uploaded anywhere.</p>
+    <div class="row">
+      <input id="share-url" class="grow mono" type="text" readonly>
+      <button class="btn primary" id="btn-copy-link">Copy</button>
+    </div>
+
+    <h3 class="sub">This device</h3>
+    <div class="row">
+      <button class="btn" id="btn-save-local">Save</button>
+      <select id="local-list" class="grow"></select>
+      <button class="btn" id="btn-load-local">Open</button>
+      <button class="btn danger" id="btn-del-local">Delete</button>
+    </div>
+
+    <h3 class="sub">Export</h3>
+    <div class="row wrap">
+      <button class="btn" id="btn-export-wav">🎧 Audio (.wav)</button>
+      <button class="btn" id="btn-export-midi">🎹 MIDI (.mid)</button>
+      <button class="btn" id="btn-export-json">📄 Project (.json)</button>
+      <button class="btn" id="btn-import-json">📂 Import project</button>
+    </div>
+    <label class="slider-row"><span>Repeats in export</span><input id="export-loops" type="range" min="1" max="8" step="1" value="2"><output id="out-loops">2</output></label>
+    <div id="export-progress" class="progress" hidden><div></div></div>
+
+    <h3 class="sub">Start over</h3>
+    <div class="row wrap">
+      <button class="btn ghost" id="btn-new">New empty song</button>
+      <button class="btn ghost" id="btn-demo">Load demo song</button>
+    </div>
+    <input id="file-input" type="file" accept=".json,application/json" hidden>
+  </div>
+</section>
+
+<section class="panel" id="panel-help" hidden aria-label="Help">
+  <header class="panel-head"><h2>How it works</h2><button class="panel-x" data-close>✕</button></header>
+  <div class="panel-body">
+    <p class="note">Click a square to place a note. Drag sideways from a note to make it longer. Drag across empty squares to paint. Right-click (or drag with the Erase tool) to rub notes out.</p>
+    <h3 class="sub">Keyboard</h3>
+    <table class="keys">
+      <tr><td><kbd>Space</kbd></td><td>Play / pause</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td>Stop and rewind</td></tr>
+      <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></td><td>Draw / Erase / Select tool</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Undo &nbsp;·&nbsp; <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> redo</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>V</kbd></td><td>Copy / paste a selection</td></tr>
+      <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Move selected notes up / down</td></tr>
+      <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Nudge selected notes in time</td></tr>
+      <tr><td><kbd>Delete</kbd></td><td>Erase the selection</td></tr>
+      <tr><td><kbd>Alt</kbd>+click</td><td>Cycle a note between soft, normal and accented</td></tr>
+      <tr><td><kbd>A</kbd> <kbd>S</kbd> … <kbd>;</kbd></td><td>Play the scale live on the home row — hold <kbd>Shift</kbd> for the register above</td></tr>
+      <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Previous / next pattern</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>wheel</kbd></td><td>Zoom the grid &nbsp;·&nbsp; <kbd>+</kbd> <kbd>−</kbd> also work</td></tr>
+      <tr><td><kbd>R</kbd> <kbd>T</kbd> <kbd>P</kbd></td><td>Record · Add track · Metronome (pulse)</td></tr>
+      <tr><td><kbd>O</kbd> <kbd>I</kbd> <kbd>E</kbd></td><td>Options · Mix &amp; FX · Share</td></tr>
+    </table>
+    <h3 class="sub">Recording</h3>
+    <p class="note">Press <b>Record</b> then <b>Play</b> and sing, hum, or play a MIDI keyboard — notes land on the selected track, snapped to the grid and to your scale. You can also just tap the letter keys in time.</p>
+    <h3 class="sub">Patterns &amp; song</h3>
+    <p class="note">Each of the eight patterns is a full grid of its own. Build a few, then chain them in the <b>Song</b> strip and switch the transport from <b>Loop</b> to <b>Song</b> to hear the arrangement end to end.</p>
+    <p class="note dim" id="about-line"></p>
+  </div>
+</section>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
