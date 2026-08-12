@@ -11,17 +11,19 @@ export class Rail {
     addButton.addEventListener('click', () => this.addTrack());
 
     list.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-act]');
       const card = e.target.closest('[data-track]');
       if (!card) return;
       const track = this.store.project.tracks.find((t) => t.id === card.dataset.track);
       if (!track) return;
-      if (!btn) {
-        this.select(track.id);
+      const btn = e.target.closest('[data-act]');
+      if (btn) {
+        e.stopPropagation();
+        this.action(btn.dataset.act, track);
         return;
       }
-      e.stopPropagation();
-      this.action(btn.dataset.act, track);
+      // Selecting only re-styles the cards. Rebuilding the rail's HTML here
+      // would close the native <select> popup the click just opened.
+      this.select(track.id);
     });
 
     list.addEventListener('input', (e) => {
@@ -97,8 +99,17 @@ export class Rail {
   }
 
   select(id) {
+    if (this.store.project.selected === id) return;
     this.store.project.selected = id;
     this.hooks.onChange('select');
+  }
+
+  /** Move the selection highlight without rebuilding any DOM. */
+  updateSelection() {
+    const selected = this.store.project.selected;
+    for (const card of this.list.children) {
+      card.classList.toggle('sel', card.dataset.track === selected);
+    }
   }
 
   addTrack() {

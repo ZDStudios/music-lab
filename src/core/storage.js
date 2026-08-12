@@ -135,11 +135,21 @@ export async function decodeShare(hash) {
   return unpackProject(JSON.parse(new TextDecoder().decode(bytes)));
 }
 
+export const HOSTED_URL = 'https://zdstudios.github.io/music-lab/';
+
+/** True when the page's own URL is not something a friend could open. */
+function embedded() {
+  if (location.protocol === 'file:' || location.protocol === 'blob:') return true;
+  try {
+    return window.top !== window.self;
+  } catch {
+    return true;   // cross-origin frame
+  }
+}
+
 export async function shareUrl(project) {
   const hash = await encodeShare(project);
-  const base = location.href.split('#')[0];
-  // file:// (desktop build) has no meaningful base — point at the hosted copy.
-  const root = location.protocol === 'file:' ? 'https://zdstudios.github.io/music-lab/' : base;
+  const root = embedded() ? HOSTED_URL : location.href.split('#')[0];
   return root + '#' + hash;
 }
 

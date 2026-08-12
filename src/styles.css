@@ -72,7 +72,7 @@
 * { box-sizing: border-box; }
 /* Author `display` rules below would otherwise beat the UA rule for [hidden]. */
 [hidden] { display: none !important; }
-html, body { height: 100%; margin: 0; }
+html, body { height: 100%; margin: 0; padding: 0; }
 body {
   background: var(--bg);
   color: var(--text);
@@ -84,6 +84,11 @@ body {
 }
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
+:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
 h2, h3 { margin: 0; font-weight: 650; }
 kbd {
   font: 600 11px/1.5 var(--mono);

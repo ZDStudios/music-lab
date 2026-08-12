@@ -44,7 +44,7 @@ const grid = new GridView({
   hooks: {
     onFirstTouch: () => { ensureAudio(); hideHint(); },
     onPreview: (track, row, vel) => preview(track, row, vel),
-    onSelectTrack: () => { rail.render(); },
+    onSelectTrack: () => rail.updateSelection(),
     onTracksChanged: () => refreshLayout(),
     onEdit: () => { markDirty(); updatePatternPills(); },
     onEditCommitted: () => markDirty(),
@@ -58,7 +58,7 @@ const rail = new Rail({
   hooks: {
     onChange: (kind) => {
       if (kind === 'layout') refreshLayout();
-      else if (kind === 'select') { rail.render(); grid.invalidate(); }
+      else if (kind === 'select') { rail.updateSelection(); grid.invalidate(); }
       else if (kind === 'name') grid.invalidate();
       else if (kind === 'vol') audio?.rig.syncTracks(store.project);
       else { rail.render(); audio?.rig.syncTracks(store.project); grid.invalidate(); }
@@ -713,18 +713,20 @@ function openPatternMenu(anchor) {
   menu.style.left = Math.min(window.innerWidth - menu.offsetWidth - 8, r.left) + 'px';
   menu.style.top = (r.top - menu.offsetHeight - 6) + 'px';
 
+  const outside = (e) => { if (!menu.contains(e.target)) close(); };
+  const close = () => {
+    document.removeEventListener('pointerdown', outside);
+    menu.remove();
+  };
+
   menu.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-i]');
     if (!btn) return;
+    close();
     items[Number(btn.dataset.i)][1]();
-    menu.remove();
   });
-  setTimeout(() => {
-    const off = (e) => {
-      if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('pointerdown', off); }
-    };
-    document.addEventListener('pointerdown', off);
-  }, 0);
+  // Deferred so the click that opened the menu does not immediately close it.
+  setTimeout(() => document.addEventListener('pointerdown', outside), 0);
 }
 
 /* ------------------------------------------------------------------ *
