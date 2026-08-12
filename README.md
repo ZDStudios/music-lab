@@ -1,4 +1,4 @@
-# Music Lab Studi
+# Music Lab Studio
 
 A grid-based song maker in the spirit of Chrome Music Lab's Song Maker — same
 "click the squares, hear music" simplicity, but with the parts that toy misses:
