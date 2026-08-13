@@ -34,6 +34,10 @@ synthesised in the browser, so it loads instantly and keeps working offline.
 - 11 synthesised melodic instruments — marimba, piano, music box, plucked
   strings, strings, brass, flute, organ, synth lead, warm pad, bass.
 - 4 drum kits (electronic, acoustic, wood blocks, congas), 6 pieces each.
+- Two big pickers at the bottom of the screen, Song Maker style: one for the
+  melody instrument and one for the drum kit, each with its own icon and a
+  preview of the sound as you choose. They act on the selected track, and
+  create the track for you if the song has none of that kind yet.
 - Master effects: reverb with adjustable room size, tempo-synced delay, tone,
   warmth (saturation), stereo width, plus a compressor on the output.
 - Swing and humanise, so a grid doesn't have to sound like a grid.
@@ -129,7 +133,10 @@ src/
     mic.js               autocorrelation pitch detection
   ui/
     grid.js              the virtualised canvas grid
-    rail.js  panels.js  toast.js
+    rail.js              track list
+    panels.js            settings, mixer, share
+    icons.js             instrument pictograms
+    popover.js  toast.js
 electron/                desktop shell (main + preload)
 scripts/
   serve.mjs              dev server

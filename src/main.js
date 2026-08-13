@@ -2,7 +2,9 @@
 
 import {
   createProject, createDemoProject, activePattern, notesOf, noteAt, totalSteps,
-  stepsPerBar, findTrack, getKit, PATTERN_LETTERS, PATTERN_COUNT, cloneProject, packProject, unpackProject,
+  stepsPerBar, findTrack, getKit, createTrack, instrumentName,
+  MELODY_INSTRUMENTS, DRUM_KITS, TRACK_COLORS,
+  PATTERN_LETTERS, PATTERN_COUNT, cloneProject, packProject, unpackProject,
 } from './core/project.js';
 import { buildPitchList, snapToLadder, freqToMidi } from './core/scales.js';
 import { createStore } from './core/state.js';
@@ -15,6 +17,8 @@ import { MicPitch } from './audio/mic.js';
 import { GridView } from './ui/grid.js';
 import { Rail } from './ui/rail.js';
 import { Panels } from './ui/panels.js';
+import { openPopover, closePopover } from './ui/popover.js';
+import { instrumentIcon } from './ui/icons.js';
 import { toast } from './ui/toast.js';
 
 const $ = (id) => document.getElementById(id);
@@ -44,7 +48,7 @@ const grid = new GridView({
   hooks: {
     onFirstTouch: () => { ensureAudio(); hideHint(); },
     onPreview: (track, row, vel) => preview(track, row, vel),
-    onSelectTrack: () => rail.updateSelection(),
+    onSelectTrack: () => { rail.updateSelection(); syncSoundPickers(); },
     onTracksChanged: () => refreshLayout(),
     onEdit: () => { markDirty(); updatePatternPills(); },
     onEditCommitted: () => markDirty(),
@@ -58,8 +62,8 @@ const rail = new Rail({
   hooks: {
     onChange: (kind) => {
       if (kind === 'layout') refreshLayout();
-      else if (kind === 'select') { rail.updateSelection(); grid.invalidate(); }
-      else if (kind === 'name') grid.invalidate();
+      else if (kind === 'select') { rail.updateSelection(); syncSoundPickers(); grid.invalidate(); }
+      else if (kind === 'name') { syncSoundPickers(); grid.invalidate(); }
       else if (kind === 'vol') audio?.rig.syncTracks(store.project);
       else { rail.render(); audio?.rig.syncTracks(store.project); grid.invalidate(); }
       markDirty();
@@ -138,6 +142,7 @@ function refreshLayout() {
   rail.render();
   grid.clearSelection();
   grid.refresh();
+  syncSoundPickers();
   updatePatternPills();
   updateChain();
   audio?.rig.syncTracks(store.project);
@@ -154,6 +159,7 @@ function adoptProject() {
   rail.render();
   grid.refresh();
   syncTransportUI();
+  syncSoundPickers();
   updatePatternPills();
   updateChain();
   audio?.rig.syncTracks(store.project);
@@ -492,6 +498,7 @@ window.addEventListener('keydown', (e) => {
       stop();
       return;
     case 'Escape':
+      closePopover();
       panels.close();
       grid.clearSelection();
       return;
@@ -660,13 +667,113 @@ $('btn-clear-track').addEventListener('click', () => {
   markDirty();
 });
 
+/* --------------------------- sound pickers --------------------------- */
+
+/**
+ * The two big pickers at the bottom, in the spirit of Song Maker: one for the
+ * melody instrument, one for the drum kit. They act on the selected track when
+ * it is of that type, otherwise on the first track that is.
+ */
+function targetTrack(type) {
+  const p = store.project;
+  const selected = findTrack(p, p.selected);
+  if (selected && selected.type === type) return selected;
+  return p.tracks.find((t) => t.type === type) || null;
+}
+
+function syncSoundPickers() {
+  for (const [type, id] of [['melody', 'pick-melody'], ['drums', 'pick-drums']]) {
+    const btn = $(id);
+    const track = targetTrack(type);
+    const label = type === 'melody' ? 'melody instrument' : 'drum kit';
+    btn.classList.toggle('empty', !track);
+    btn.querySelector('.si').innerHTML = instrumentIcon(track ? track.instrument : (type === 'melody' ? 'marimba' : 'electronic'));
+    btn.querySelector('.sn').textContent = track ? instrumentName(track) : (type === 'melody' ? 'Add melody' : 'Add drums');
+    btn.title = track
+      ? `Change the ${label} for “${track.name}”`
+      : `Add a ${type === 'melody' ? 'melody' : 'drum'} track`;
+  }
+}
+
+function previewInstrument(track) {
+  const a = ensureAudio();
+  if (!a) return;
+  const t = a.ctx.currentTime + 0.02;
+  const dur = stepSeconds(store.project);
+  if (track.type === 'drums') {
+    const beats = [[0, 0], [3, 0.16], [1, 0.32]];   // kick · hat · snare
+    for (const [row, delay] of beats) {
+      a.rig.trigger(track, { s: 0, p: row, l: 1, v: 0.9 }, t + delay, pitchList, dur);
+    }
+  } else {
+    const notes = [0, 2, 4].map((d) => Math.min(pitchList.length - 1, d));
+    notes.forEach((row, i) => {
+      a.rig.trigger(track, { s: 0, p: row, l: 2, v: 0.85 }, t + i * 0.13, pitchList, dur);
+    });
+  }
+}
+
+function openSoundPicker(anchor, type) {
+  const p = store.project;
+  const track = targetTrack(type);
+  const options = type === 'drums' ? DRUM_KITS : MELODY_INSTRUMENTS;
+  const heading = type === 'drums' ? 'Drum kit' : 'Melody instrument';
+
+  const html = `
+    <div class="pop-head"><span>${heading}</span><b>${track ? esc(track.name) : 'new track'}</b></div>
+    <div class="sound-grid">
+      ${options.map((o) => `
+        <button class="sound-opt${track && o.id === track.instrument ? ' on' : ''}" data-value="${o.id}">
+          ${instrumentIcon(o.id)}<span>${esc(o.name)}</span>
+        </button>`).join('')}
+    </div>`;
+
+  openPopover({
+    anchor,
+    html,
+    className: 'sound-menu',
+    onPick: (id) => {
+      store.snapshot('instrument');
+      let target = track;
+      if (!target) {
+        const option = options.find((o) => o.id === id);
+        target = createTrack(type, {
+          instrument: id,
+          name: type === 'drums' ? 'Drums' : (option ? option.name : 'Melody'),
+          color: TRACK_COLORS[p.tracks.length % TRACK_COLORS.length],
+        });
+        p.tracks.push(target);
+        p.selected = target.id;
+      } else {
+        target.instrument = id;
+        // Keep a default name in step with the sound, but never rename a
+        // track the user has named themselves.
+        const auto = (type === 'drums' ? DRUM_KITS : MELODY_INSTRUMENTS)
+          .some((o) => o.name === target.name) || target.name === 'Drums' || target.name === 'Melody';
+        if (auto && type === 'melody') {
+          target.name = options.find((o) => o.id === id)?.name || target.name;
+        }
+      }
+      store.endGesture();
+      // A different kit means a different set of rows.
+      refreshLayout();
+      previewInstrument(target);
+      hideHint();
+    },
+  });
+}
+
+$('pick-melody').addEventListener('click', (e) => openSoundPicker(e.currentTarget, 'melody'));
+$('pick-drums').addEventListener('click', (e) => openSoundPicker(e.currentTarget, 'drums'));
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 /* ---------------------------- pattern menu ---------------------------- */
 
 function openPatternMenu(anchor) {
-  document.querySelector('.popmenu')?.remove();
   const p = store.project;
-  const menu = document.createElement('div');
-  menu.className = 'popmenu';
   const items = [
     ['Duplicate to next free pattern', () => {
       const target = store.project.patterns.findIndex((_, i) => i !== p.patternIndex && !patternHasNotes(i));
@@ -707,26 +814,11 @@ function openPatternMenu(anchor) {
       markDirty();
     }],
   ];
-  menu.innerHTML = items.map(([label], i) => `<button data-i="${i}">${label}</button>`).join('');
-  document.body.appendChild(menu);
-  const r = anchor.getBoundingClientRect();
-  menu.style.left = Math.min(window.innerWidth - menu.offsetWidth - 8, r.left) + 'px';
-  menu.style.top = (r.top - menu.offsetHeight - 6) + 'px';
-
-  const outside = (e) => { if (!menu.contains(e.target)) close(); };
-  const close = () => {
-    document.removeEventListener('pointerdown', outside);
-    menu.remove();
-  };
-
-  menu.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-i]');
-    if (!btn) return;
-    close();
-    items[Number(btn.dataset.i)][1]();
+  openPopover({
+    anchor,
+    html: items.map(([label], i) => `<button data-value="${i}">${label}</button>`).join(''),
+    onPick: (i) => items[Number(i)][1](),
   });
-  // Deferred so the click that opened the menu does not immediately close it.
-  setTimeout(() => document.addEventListener('pointerdown', outside), 0);
 }
 
 /* ------------------------------------------------------------------ *

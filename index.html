@@ -85,6 +85,15 @@
 
   <!-- ══════════════════ BOTTOM BAR ══════════════════ -->
   <footer class="bottombar">
+    <div class="bb-group sounds">
+      <button id="pick-melody" class="sound-btn" title="Choose the melody instrument">
+        <span class="si"></span><span class="sn">Marimba</span><span class="sc">▾</span>
+      </button>
+      <button id="pick-drums" class="sound-btn" title="Choose the drum kit">
+        <span class="si"></span><span class="sn">Electronic</span><span class="sc">▾</span>
+      </button>
+    </div>
+
     <div class="bb-group patterns">
       <span class="bb-label">Pattern</span>
       <div class="pattern-pills" id="pattern-pills"></div>
@@ -98,7 +107,6 @@
     </div>
 
     <div class="bb-group tools">
-      <span class="bb-label">Tool</span>
       <div class="seg" id="tool-seg">
         <button data-tool="draw" class="on" title="Draw notes  (1)">Draw</button>
         <button data-tool="erase" title="Erase  (2)">Erase</button>
@@ -107,7 +115,6 @@
     </div>
 
     <div class="bb-group gen">
-      <span class="bb-label">Ideas</span>
       <button class="mini-btn" id="btn-gen" title="Generate a part for the selected track">✨ Generate</button>
       <select id="gen-style" class="mini-select" title="What to generate">
         <option value="auto">Auto</option>
