@@ -911,6 +911,29 @@ async function saveBlob(blob, filename) {
     else if (res && !res.canceled) toast('Could not save the file', { error: true });
     return;
   }
+
+  // Sandboxed hosts block ordinary download links, but some offer the viewer a
+  // save prompt instead. Their allowlists are narrow — projects get through,
+  // audio and MIDI usually do not — so say so rather than failing silently.
+  const host = window.claude?.downloads;
+  if (host) {
+    try {
+      await host.save({ filename, data: blob });
+      toast('Saved');
+    } catch (err) {
+      const code = err && err.code;
+      if (code === 'declined') return;
+      if (code === 'rejected_extension' || code === 'extension_not_enabled') {
+        toast('This preview can only save project files — open the full app to export audio and MIDI.', { error: true, ms: 4200 });
+      } else if (code === 'too_large') {
+        toast('Too big to save here — try fewer repeats.', { error: true });
+      } else {
+        toast('Could not save the file', { error: true });
+      }
+    }
+    return;
+  }
+
   store$.download(blob, filename);
 }
 
