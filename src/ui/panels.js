@@ -1,7 +1,7 @@
 /* Slide-over panels: song settings, mixer/FX, share/export, help. */
 
-import { SCALES, NOTE_NAMES } from '../core/scales.js';
-import { THEMES, instrumentName, rescaleNotes } from '../core/project.js';
+import { SCALES, NOTE_NAMES, NOTE_NAMES_FLAT, buildPitchList } from '../core/scales.js';
+import { THEMES, instrumentName, rescaleNotes, remapNotesToLadder } from '../core/project.js';
 
 const PANELS = ['settings', 'mixer', 'export', 'help'];
 
@@ -55,11 +55,11 @@ export class Panels {
       bars: $('set-bars'), beats: $('set-beats'), splits: $('set-splits'),
       swing: $('set-swing'), humanize: $('set-humanize'),
       outSwing: $('out-swing'), outHumanize: $('out-humanize'),
-      theme: $('set-theme'), labels: $('set-labels'),
+      theme: $('set-theme'), labels: $('set-labels'), accidentals: $('set-accidentals'),
     };
 
     fill(this.s.scale, SCALES.map((s) => [s.id, s.name]));
-    fill(this.s.root, NOTE_NAMES.map((n) => [n, n]));
+    this.fillRoots();
     fill(this.s.octave, [2, 3, 4, 5, 6].map((n) => [n, `Octave ${n}`]));
     fill(this.s.octaves, [1, 2, 3, 4].map((n) => [n, n === 1 ? '1 octave' : `${n} octaves`]));
     fill(this.s.bars, range(1, 16).map((n) => [n, String(n)]));
@@ -102,10 +102,40 @@ export class Panels {
       this.store.project.theme = this.s.theme.value;
       this.hooks.onTheme();
     });
+
     this.s.labels.addEventListener('change', () => {
-      this.store.project.showLabels = this.s.labels.value === '1';
+      const p = this.store.project;
+      const mode = this.s.labels.value;
+      this.store.snapshot('labels');
+      p.showLabels = mode !== 'off';
+      if (mode !== 'off') p.useFlats = mode === 'flat';
+      this.store.endGesture();
+      this.fillRoots();
       this.hooks.onLayout();
     });
+
+    // Adding or removing the accidental rows renumbers every row, so the
+    // notes move with their pitches instead of jumping to new ones.
+    this.s.accidentals.addEventListener('change', () => {
+      const p = this.store.project;
+      const next = this.s.accidentals.value === '1';
+      if (next === !!p.accidentals) return;
+      this.store.snapshot('accidentals');
+      const before = buildPitchList(p);
+      p.accidentals = next;
+      remapNotesToLadder(p, before, buildPitchList(p));
+      this.store.endGesture();
+      this.hooks.onLayout();
+    });
+  }
+
+  /** Root names follow the sharp/flat preference; the stored value stays sharp. */
+  fillRoots() {
+    const p = this.store.project;
+    const names = p.useFlats ? NOTE_NAMES_FLAT : NOTE_NAMES;
+    const current = this.s.root.value || p.root;
+    fill(this.s.root, NOTE_NAMES.map((n, i) => [n, names[i]]));
+    this.s.root.value = NOTE_NAMES.includes(current) ? current : p.root;
   }
 
   syncSettings() {
@@ -122,7 +152,10 @@ export class Panels {
     this.s.outSwing.textContent = Math.round(p.swing * 100) + '%';
     this.s.outHumanize.textContent = Math.round(p.humanize * 100) + '%';
     this.s.theme.value = p.theme;
-    this.s.labels.value = p.showLabels ? '1' : '0';
+    this.s.labels.value = p.showLabels ? (p.useFlats ? 'flat' : 'sharp') : 'off';
+    this.s.accidentals.value = p.accidentals ? '1' : '0';
+    this.fillRoots();
+    this.s.root.value = p.root;
   }
 
   /* ------------------------------- mixer ------------------------------- */

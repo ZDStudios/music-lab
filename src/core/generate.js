@@ -1,7 +1,7 @@
 /* The "Ideas" button: musical starting points that always land in key and in time. */
 
 import { totalSteps, stepsPerBar } from './project.js';
-import { CHORD_SHAPES } from './scales.js';
+import { CHORD_SHAPES, getScale } from './scales.js';
 
 const rnd = (n) => Math.floor(Math.random() * n);
 const pick = (arr) => arr[rnd(arr.length)];
@@ -26,12 +26,22 @@ const PROGRESSIONS = [
   [0, 6, 3, 4],
 ];
 
-export function generate(project, track, style, pitchCount) {
+/**
+ * @param {object[]} pitches the track's pitch ladder, so generated parts land
+ *   on scale tones even when the grid also shows sharps and flats.
+ */
+export function generate(project, track, style, pitches) {
   const steps = totalSteps(project);
   const spb = project.splits;                 // steps per beat
   const bar = stepsPerBar(project);
   const bars = project.bars;
-  const ctx = { project, track, steps, spb, bar, bars, pitchCount };
+  // Row indices of the in-scale notes, low to high.
+  const scaleRows = pitches.map((_, i) => i).filter((i) => pitches[i].inScale !== false);
+  const ctx = {
+    project, track, steps, spb, bar, bars,
+    pitches, scaleRows,
+    perOct: getScale(project.scale).steps.length,
+  };
 
   let chosen = style;
   if (style === 'auto') {
@@ -98,24 +108,19 @@ function progression(bars) {
 }
 
 /**
- * The pitch ladder is scale degrees stacked octave after octave, so a degree
- * number maps straight to a row — degree 9 in a 7-note scale is the third of
- * the next octave, which is exactly what we want from a chord shape.
+ * Scale degrees count through the in-scale rows only, so degree 9 in a 7-note
+ * scale is the third of the next octave — exactly what a chord shape wants —
+ * and accidental rows are simply skipped.
  */
-function degreeToRow(deg, pitchCount, octaveBias = 0) {
-  const perOct = Math.max(1, guessDegreesPerOctave(pitchCount));
-  return Math.max(0, Math.min(pitchCount - 1, Math.round(deg) + octaveBias * perOct));
+function degreeToRow(deg, ctx, octaveBias = 0) {
+  const rows = ctx.scaleRows;
+  if (!rows.length) return 0;
+  const i = Math.round(deg) + octaveBias * ctx.perOct;
+  return rows[Math.max(0, Math.min(rows.length - 1, i))];
 }
 
-function guessDegreesPerOctave(pitchCount) {
-  // pitchCount = degrees*octaves + 1 (the ladder is capped with the octave root).
-  for (const d of [5, 6, 7, 12]) {
-    if ((pitchCount - 1) % d === 0) return d;
-  }
-  return 7;
-}
-
-function melodyChords({ steps, bar, bars, pitchCount }) {
+function melodyChords(ctx) {
+  const { steps, bar, bars } = ctx;
   const notes = [];
   const prog = progression(bars);
   const shape = pick([CHORD_SHAPES.triad, CHORD_SHAPES.triad, CHORD_SHAPES.seventh, CHORD_SHAPES.wide]);
@@ -124,14 +129,15 @@ function melodyChords({ steps, bar, bars, pitchCount }) {
     const len = Math.max(1, Math.round(chance(0.35) ? bar / 2 : bar));
     for (let s = b * bar; s < (b + 1) * bar && s < steps; s += len) {
       for (const iv of shape) {
-        notes.push({ s, p: degreeToRow(root + iv, pitchCount), l: Math.min(len, steps - s), v: 0.6 });
+        notes.push({ s, p: degreeToRow(root + iv, ctx), l: Math.min(len, steps - s), v: 0.6 });
       }
     }
   }
   return notes;
 }
 
-function melodyArp({ steps, spb, bar, bars, pitchCount }) {
+function melodyArp(ctx) {
+  const { steps, spb, bar, bars } = ctx;
   const notes = [];
   const prog = progression(bars);
   const shape = pick([[0, 2, 4, 2], [0, 2, 4, 7], [0, 4, 2, 4], [0, 2, 4, 6]]);
@@ -141,7 +147,7 @@ function melodyArp({ steps, spb, bar, bars, pitchCount }) {
     const b = Math.floor(s / bar) % bars;
     notes.push({
       s,
-      p: degreeToRow(prog[b] + shape[i % shape.length], pitchCount),
+      p: degreeToRow(prog[b] + shape[i % shape.length], ctx),
       l: step,
       v: i % shape.length === 0 ? 0.9 : 0.62,
     });
@@ -150,12 +156,13 @@ function melodyArp({ steps, spb, bar, bars, pitchCount }) {
   return notes;
 }
 
-function melodyBass({ steps, spb, bar, bars, pitchCount }) {
+function melodyBass(ctx) {
+  const { steps, spb, bar, bars } = ctx;
   const notes = [];
   const prog = progression(bars);
   const feel = pick(['held', 'pump', 'walk']);
   for (let b = 0; b < bars; b++) {
-    const root = degreeToRow(prog[b], pitchCount);
+    const root = degreeToRow(prog[b], ctx);
     const start = b * bar;
     if (feel === 'held') {
       notes.push({ s: start, p: root, l: Math.min(bar, steps - start), v: 0.9 });
@@ -170,7 +177,7 @@ function melodyBass({ steps, spb, bar, bars, pitchCount }) {
         if (s >= steps) break;
         notes.push({
           s,
-          p: degreeToRow(prog[b] + walk[k], pitchCount),
+          p: degreeToRow(prog[b] + walk[k], ctx),
           l: Math.max(1, Math.round(bar / 4)),
           v: k === 0 ? 0.95 : 0.72,
         });
@@ -180,10 +187,10 @@ function melodyBass({ steps, spb, bar, bars, pitchCount }) {
   return notes;
 }
 
-function melodyTune({ steps, spb, bar, bars, pitchCount }) {
+function melodyTune(ctx) {
+  const { steps, bar, bars, perOct } = ctx;
   const notes = [];
   const prog = progression(bars);
-  const perOct = guessDegreesPerOctave(pitchCount);
   const rhythms = [
     [2, 2, 4], [4, 2, 2], [2, 1, 1, 4], [4, 4], [1, 1, 2, 4], [2, 2, 2, 2],
   ];
@@ -202,28 +209,35 @@ function melodyTune({ steps, spb, bar, bars, pitchCount }) {
         deg += pick([-2, -1, -1, 1, 1, 2, chance(0.15) ? 3 : 1]);
       }
       deg = Math.max(0, Math.min(perOct * 2 - 1, deg));
-      const row = degreeToRow(deg, pitchCount);
+      const row = degreeToRow(deg, ctx);
       if (!chance(0.12) || strong) {
         notes.push({ s, p: row, l: Math.min(len, steps - s), v: strong ? 0.95 : 0.72 });
       }
       s += len;
     }
   }
-  // Land on the tonic.
+  // Land on the tonic, in whichever octave the phrase ended up.
   const last = notes[notes.length - 1];
-  if (last) last.p = degreeToRow(0, pitchCount, Math.floor(last.p / perOct));
+  if (last) {
+    const reached = ctx.scaleRows.indexOf(last.p);
+    last.p = degreeToRow(0, ctx, Math.floor(Math.max(0, reached) / perOct));
+  }
   return notes;
 }
 
-function melodySparkle({ steps, spb, pitchCount }) {
+function melodySparkle(ctx) {
+  const { steps, spb, perOct, scaleRows } = ctx;
   const notes = [];
-  const perOct = guessDegreesPerOctave(pitchCount);
-  const high = Math.max(0, pitchCount - perOct - 1);
   const step = Math.max(1, Math.round(spb / 2));
+  const lowest = Math.max(0, scaleRows.length - perOct - 1);
   for (let s = 0; s < steps; s += step) {
     if (!chance(0.3)) continue;
-    const row = Math.min(pitchCount - 1, high + rnd(perOct + 1));
-    notes.push({ s, p: row, l: step, v: 0.35 + Math.random() * 0.35 });
+    notes.push({
+      s,
+      p: degreeToRow(lowest + rnd(perOct + 1), ctx),
+      l: step,
+      v: 0.35 + Math.random() * 0.35,
+    });
   }
   return notes;
 }

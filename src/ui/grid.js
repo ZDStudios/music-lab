@@ -74,6 +74,60 @@ export class GridView {
     scroller.addEventListener('pointerup', (e) => this._onUp(e));
     scroller.addEventListener('pointercancel', (e) => this._onUp(e));
     scroller.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    // The bar ruler is outside the scroll layer, so the canvas handles it.
+    canvas.addEventListener('pointerdown', (e) => this._onRulerDown(e));
+    canvas.addEventListener('pointermove', (e) => this._onRulerMove(e));
+    canvas.addEventListener('pointerup', (e) => this._onRulerUp(e));
+    canvas.addEventListener('pointercancel', (e) => this._onRulerUp(e));
+    canvas.addEventListener('pointerleave', () => {
+      if (this.rulerHover) { this.rulerHover = false; this.invalidate(); }
+    });
+  }
+
+  /* --------------------------- ruler scrubbing --------------------------- */
+
+  /** Grid step under the pointer, or null when it is not over the ruler. */
+  _rulerStep(e) {
+    const rect = this.stage.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    if (y < 0 || y > this.ruler || x < this.gutter) return null;
+    const step = Math.floor((x - this.gutter + this.scroller.scrollLeft) / this.cellW);
+    return Math.max(0, Math.min(totalSteps(this.store.project) - 1, step));
+  }
+
+  _onRulerDown(e) {
+    const step = this._rulerStep(e);
+    if (step == null) return;
+    e.preventDefault();
+    this.scrubbing = true;
+    this.canvas.setPointerCapture?.(e.pointerId);
+    this.hooks.onScrub?.(step);
+  }
+
+  _onRulerMove(e) {
+    if (this.scrubbing) {
+      const rect = this.stage.getBoundingClientRect();
+      const x = e.clientX - rect.left - this.gutter + this.scroller.scrollLeft;
+      const step = Math.max(0, Math.min(totalSteps(this.store.project) - 1, Math.floor(x / this.cellW)));
+      this.hooks.onScrub?.(step);
+      return;
+    }
+    const over = this._rulerStep(e) != null;
+    this.canvas.style.cursor = over ? 'ew-resize' : '';
+    if (over !== this.rulerHover) {
+      this.rulerHover = over;
+      this.invalidate();
+    }
+  }
+
+  _onRulerUp(e) {
+    if (!this.scrubbing) return;
+    this.scrubbing = false;
+    this.canvas.releasePointerCapture?.(e.pointerId);
+    this.hooks.onScrubEnd?.();
+    this.invalidate();
   }
 
   /* ------------------------------ geometry ------------------------------ */
@@ -118,6 +172,7 @@ export class GridView {
             track, type: 'melody', row: i,
             label: pitch.name, color: pitchColor(pitch.pc, pitch.octave, p.octaves),
             root: pitch.degree === 0,
+            accidental: pitch.inScale === false,
             first: i === pitches.length - 1, last: i === 0,
           });
         }
@@ -219,6 +274,10 @@ export class GridView {
       }
       if (row.type === 'fold') {
         g.fillStyle = withAlpha(row.color, 0.06);
+        g.fillRect(c0 * this.cellW, y, (c1 - c0) * this.cellW, this.rowH);
+      } else if (row.accidental) {
+        // Sharps and flats sit back like the black keys of a piano.
+        g.fillStyle = withAlpha(t.bg, 0.42);
         g.fillRect(c0 * this.cellW, y, (c1 - c0) * this.cellW, this.rowH);
       } else if (row.root) {
         g.fillStyle = withAlpha(row.color, 0.07);
@@ -327,12 +386,14 @@ export class GridView {
       const on = this.play.patternIndex === p.patternIndex;
       const x = (this.play.local + this.play.frac) * this.cellW;
       g.strokeStyle = on ? t.playhead : withAlpha(t.playhead, 0.3);
-      g.lineWidth = 2;
-      g.globalAlpha = on ? 0.9 : 0.4;
+      g.lineWidth = this.play.paused ? 1.5 : 2;
+      g.globalAlpha = on ? (this.play.paused ? 0.55 : 0.9) : 0.35;
+      if (this.play.paused) g.setLineDash([5, 4]);
       g.beginPath();
       g.moveTo(x, r0 * this.rowH);
       g.lineTo(x, r1 * this.rowH);
       g.stroke();
+      g.setLineDash([]);
       g.globalAlpha = 1;
     }
     g.restore();
@@ -375,19 +436,23 @@ export class GridView {
     for (let r = r0; r < r1; r++) {
       const row = this.rows[r];
       const y = r * this.rowH;
-      g.fillStyle = withAlpha(row.color, row.type === 'fold' ? 0.2 : 0.1);
+      g.fillStyle = row.accidental
+        ? withAlpha(t.bg, 0.5)
+        : withAlpha(row.color, row.type === 'fold' ? 0.2 : 0.1);
       g.fillRect(0, y, this.gutter, this.rowH);
       // colour chip
       g.fillStyle = row.color;
-      g.globalAlpha = row.track.id === p.selected ? 1 : 0.45;
+      g.globalAlpha = (row.track.id === p.selected ? 1 : 0.45) * (row.accidental ? 0.5 : 1);
       g.fillRect(0, y + 1, 3, this.rowH - 2);
-      g.globalAlpha = 1;
+      g.globalAlpha = row.accidental ? 0.6 : 1;
 
       if (this.rowH >= 11 && (p.showLabels || row.type !== 'melody')) {
         const label = row.type === 'melody' && !p.showLabels ? '' : row.label;
-        g.fillStyle = row.track.id === p.selected ? t.text : t.faint;
+        g.fillStyle = row.accidental ? t.faint
+          : (row.track.id === p.selected ? t.text : t.faint);
         g.fillText(fit(g, label, this.gutter - 12), 8, y + this.rowH / 2 + 0.5);
       }
+      g.globalAlpha = 1;
       if (row.first) {
         g.strokeStyle = t.bar;
         g.beginPath();
@@ -432,14 +497,23 @@ export class GridView {
     }
 
     if (this.play) {
+      // Paused or hovered, the marker grows into something you can grab.
       const x = (this.play.local + this.play.frac) * this.cellW;
-      g.fillStyle = t.playhead;
+      const big = this.play.paused || this.scrubbing || this.rulerHover;
+      const w = big ? 7 : 4.5;
+      g.fillStyle = this.play.patternIndex === this.store.project.patternIndex
+        ? t.playhead : withAlpha(t.playhead, 0.4);
       g.beginPath();
-      g.moveTo(x - 4, 3);
-      g.lineTo(x + 4, 3);
-      g.lineTo(x, 10);
+      g.moveTo(x - w, 2);
+      g.lineTo(x + w, 2);
+      g.lineTo(x, big ? 14 : 10);
       g.closePath();
       g.fill();
+      if (big) {
+        g.strokeStyle = t.bg2;
+        g.lineWidth = 1;
+        g.stroke();
+      }
     }
     g.restore();
   }
@@ -449,7 +523,9 @@ export class GridView {
   setPlay(pos) {
     const had = !!this.play;
     this.play = pos;
-    if (pos && this.contentW > this.viewW) this.follow(pos);
+    // Only chase a moving playhead — scrolling under a hand that is dragging
+    // the paused one would fight the user.
+    if (pos && !pos.paused && this.contentW > this.viewW) this.follow(pos);
     if (pos || had) this.invalidate();
   }
 

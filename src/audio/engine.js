@@ -274,7 +274,35 @@ export class Transport {
   }
 
   rewind() {
-    this.absStep = 0;
+    this.seek(0);
+  }
+
+  /** Jump the playhead. Playing carries on from the new spot. */
+  seek(absStep) {
+    const wasPlaying = this.playing;
+    if (wasPlaying) this.stop();
+    this.absStep = Math.max(0, Math.round(absStep));
+    if (wasPlaying) this.start();
+  }
+
+  /** Seek within the pattern that is on screen, keeping the place in the song. */
+  seekLocal(localStep) {
+    const total = totalSteps(this.getProject());
+    const cycle = Math.floor(this.absStep / total);
+    this.seek(cycle * total + Math.max(0, Math.min(total - 1, localStep)));
+  }
+
+  /**
+   * Where the playhead is, playing or not. Paused positions keep showing so
+   * you can see — and drag — the spot playback will resume from.
+   */
+  current() {
+    if (this.playing) {
+      const live = this.position();
+      if (live) return live;
+    }
+    const { patternIndex, local, chainIndex } = resolveStep(this.getProject(), this.absStep);
+    return { absStep: this.absStep, time: 0, patternIndex, local, chainIndex, frac: 0, paused: true };
   }
 
   _tick() {

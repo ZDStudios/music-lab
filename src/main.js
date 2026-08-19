@@ -52,6 +52,7 @@ const grid = new GridView({
     onTracksChanged: () => refreshLayout(),
     onEdit: () => { markDirty(); updatePatternPills(); },
     onEditCommitted: () => markDirty(),
+    onScrub: (step) => scrubTo(step),
   },
 });
 
@@ -145,6 +146,7 @@ function refreshLayout() {
   syncSoundPickers();
   updatePatternPills();
   updateChain();
+  if (!audio?.transport.playing) refreshPlayhead();
   audio?.rig.syncTracks(store.project);
   syncFx();
   if (panels.open === 'settings') panels.syncSettings();
@@ -170,6 +172,7 @@ function adoptProject() {
   $('tempo').value = String(store.project.tempo);
   $('tempo-val').textContent = String(store.project.tempo);
   $('master-vol').value = String(store.project.fx.master);
+  if (!audio?.transport.playing) refreshPlayhead();
   document.title = (store.project.name ? store.project.name + ' — ' : '') + 'Music Lab Studio';
 }
 
@@ -222,21 +225,57 @@ function pause() {
   if (!audio) return;
   audio.transport.stop();
   $('app').classList.remove('playing');
-  grid.setPlay(null);
   cancelAnimationFrame(raf);
   raf = 0;
   lastChainIndex = -2;
-  updatePosReadout(null);
+  // The playhead stays put, so you can see — and drag — where play resumes.
+  refreshPlayhead();
   updateChain();
 }
 
 function stop() {
   pause();
   audio?.transport.rewind();
-  updatePosReadout(null);
+  refreshPlayhead();
 }
 
+/** Where the playhead sits right now, whether or not anything is playing. */
+function currentPosition() {
+  if (audio) return audio.transport.current();
+  return { local: 0, patternIndex: store.project.patternIndex, chainIndex: -1, frac: 0, paused: true };
+}
+
+function refreshPlayhead() {
+  const pos = currentPosition();
+  grid.setPlay(pos);
+  updatePosReadout(pos);
+}
+
+/** Dragging the bar ruler moves the playhead; playback follows it. */
+function scrubTo(step) {
+  const a = ensureAudio();
+  if (!a) return;
+  a.transport.seekLocal(step);
+  refreshPlayhead();
+  hideHint();
+}
+
+let lastPlayPress = 0;
+
 function togglePlay() {
+  const now = performance.now();
+  const doublePress = now - lastPlayPress < 420;
+  lastPlayPress = now;
+
+  // Two quick presses send the playhead back to the top and play from there.
+  if (doublePress) {
+    const a = ensureAudio();
+    if (!a) return;
+    a.transport.seek(0);
+    if (!a.transport.playing) play();
+    else refreshPlayhead();
+    return;
+  }
   if (audio?.transport.playing) pause();
   else play();
 }
@@ -272,6 +311,7 @@ function updatePosReadout(pos) {
     $('pos').innerHTML = '1<i>.</i>1';
     return;
   }
+  $('pos').classList.toggle('paused', !!pos.paused);
   const b = Math.floor(pos.local / bar) + 1;
   const beat = Math.floor((pos.local % bar) / p.splits) + 1;
   $('pos').innerHTML = `${b}<i>.</i>${beat}`;
@@ -317,6 +357,7 @@ function selectPattern(i) {
   grid.invalidate();
   updatePatternPills();
   updateChain();
+  if (!audio?.transport.playing) refreshPlayhead();
   markDirty();
 }
 
@@ -646,7 +687,7 @@ $('btn-gen').addEventListener('click', () => {
   const style = $('gen-style').value;
   store.snapshot('generate');
   const pattern = activePattern(p);
-  pattern.notes[track.id] = generate(p, track, style, pitchList.length);
+  pattern.notes[track.id] = generate(p, track, style, pitchList);
   store.endGesture();
   grid.invalidate();
   updatePatternPills();

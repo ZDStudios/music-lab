@@ -152,6 +152,8 @@ export function createProject() {
       tone: 1, drive: 0.08, chorus: 0.15, master: 0.85,
     },
     showLabels: true,
+    useFlats: false,
+    accidentals: false,
     theme: 'aurora',
   };
 }
@@ -240,6 +242,40 @@ export function rescaleNotes(p, factor) {
       for (const n of notes) {
         n.s = Math.max(0, Math.round(n.s * factor));
         n.l = Math.max(1, Math.round(Math.max(1, n.l) * factor));
+      }
+    }
+  }
+}
+
+/**
+ * Move melody notes to the rows that hold the same pitches in a new ladder.
+ * Adding or removing the accidental rows shifts every row index, so without
+ * this the song would be scrambled by a settings toggle.
+ */
+export function remapNotesToLadder(p, oldPitches, newPitches) {
+  if (!oldPitches.length || !newPitches.length) return;
+  const byMidi = new Map();
+  newPitches.forEach((pitch, i) => {
+    if (!byMidi.has(pitch.midi)) byMidi.set(pitch.midi, i);
+  });
+  const nearest = (midi) => {
+    let best = 0;
+    let bestD = Infinity;
+    newPitches.forEach((pitch, i) => {
+      const d = Math.abs(pitch.midi - midi);
+      if (d < bestD) { bestD = d; best = i; }
+    });
+    return best;
+  };
+
+  const melodyIds = new Set(p.tracks.filter((t) => t.type !== 'drums').map((t) => t.id));
+  for (const pattern of p.patterns) {
+    for (const [trackId, notes] of Object.entries(pattern.notes || {})) {
+      if (!melodyIds.has(trackId)) continue;
+      for (const note of notes) {
+        const old = oldPitches[note.p];
+        if (!old) continue;
+        note.p = byMidi.has(old.midi) ? byMidi.get(old.midi) : nearest(old.midi);
       }
     }
   }

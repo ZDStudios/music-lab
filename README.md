@@ -26,6 +26,10 @@ synthesised in the browser, so it loads instantly and keeps working offline.
   accented (<kbd>Alt</kbd>+click to cycle).
 - Draw, erase and box-select tools. Copy, paste, transpose and nudge a
   selection with the arrow keys.
+- **Sharps and flats** on demand: the grid shows your scale by default, and
+  *Extra notes* adds the in-between semitones as recessed rows, like the black
+  keys of a piano. Row names spell either sharps (C♯) or flats (D♭). Turning it
+  on or off keeps every note on the pitch it was written at.
 - **Unlimited undo/redo.**
 - Fold a track down to a single summary lane when the grid gets busy.
 
@@ -50,6 +54,8 @@ synthesised in the browser, so it loads instantly and keeps working offline.
   sixths.
 - **8 patterns** per song, chained into an arrangement — switch the transport
   from *Loop* to *Song* to play the whole thing.
+- The playhead stays put when you pause, and drags along the bar ruler to any
+  point in the song. Press play twice quickly to start again from the top.
 - **✨ Generate** writes a part for the selected track: Euclidean beats, four on
   the floor, arpeggios, chord progressions, basslines, melodies, sparkle.
 
@@ -67,7 +73,7 @@ synthesised in the browser, so it loads instantly and keeps working offline.
 
 | Key | |
 |---|---|
-| <kbd>Space</kbd> / <kbd>Enter</kbd> | play-pause / stop |
+| <kbd>Space</kbd> / <kbd>Enter</kbd> | play-pause / stop (press play twice to return to the start) |
 | <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> | draw / erase / select |
 | <kbd>A</kbd>…<kbd>;</kbd> | play the scale live (<kbd>Shift</kbd> for the register above) |
 | <kbd>[</kbd> <kbd>]</kbd> | previous / next pattern |

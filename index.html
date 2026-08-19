@@ -149,7 +149,17 @@
       <label class="field"><span>Root note</span><select id="set-root"></select></label>
       <label class="field"><span>Start octave</span><select id="set-octave"></select></label>
       <label class="field"><span>Octaves</span><select id="set-octaves"></select></label>
+      <label class="field"><span>Extra notes</span><select id="set-accidentals">
+        <option value="0">Just the scale</option>
+        <option value="1">Sharps &amp; flats too</option>
+      </select></label>
+      <label class="field"><span>Note names</span><select id="set-labels">
+        <option value="sharp">Sharps (C♯)</option>
+        <option value="flat">Flats (D♭)</option>
+        <option value="off">Hide</option>
+      </select></label>
     </div>
+    <p class="note">“Sharps &amp; flats too” adds the in-between notes as recessed rows, like the black keys of a piano. Your song keeps its pitches either way.</p>
 
     <h3 class="sub">Length &amp; feel</h3>
     <div class="field-grid">
@@ -163,9 +173,6 @@
     <h3 class="sub">Look</h3>
     <div class="field-grid">
       <label class="field"><span>Theme</span><select id="set-theme"></select></label>
-      <label class="field"><span>Note names</span><select id="set-labels">
-        <option value="1">Show</option><option value="0">Hide</option>
-      </select></label>
     </div>
     <p class="note">Changing bars, beats or splits keeps your notes — anything past the new end is remembered until you shorten the song again.</p>
   </div>
@@ -234,9 +241,10 @@
   <header class="panel-head"><h2>How it works</h2><button class="panel-x" data-close>✕</button></header>
   <div class="panel-body">
     <p class="note">Click a square to place a note. Drag sideways from a note to make it longer. Drag across empty squares to paint. Right-click (or drag with the Erase tool) to rub notes out.</p>
+    <p class="note">The playhead stays put when you pause. Drag it along the numbered bar at the top of the grid to move to any point in the song — playback picks up from wherever you drop it.</p>
     <h3 class="sub">Keyboard</h3>
     <table class="keys">
-      <tr><td><kbd>Space</kbd></td><td>Play / pause</td></tr>
+      <tr><td><kbd>Space</kbd></td><td>Play / pause &nbsp;·&nbsp; press twice quickly to start again from the top</td></tr>
       <tr><td><kbd>Enter</kbd></td><td>Stop and rewind</td></tr>
       <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></td><td>Draw / Erase / Select tool</td></tr>
       <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Undo &nbsp;·&nbsp; <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> redo</td></tr>
@@ -253,6 +261,8 @@
     </table>
     <h3 class="sub">Recording</h3>
     <p class="note">Press <b>Record</b> then <b>Play</b> and sing, hum, or play a MIDI keyboard — notes land on the selected track, snapped to the grid and to your scale. You can also just tap the letter keys in time.</p>
+    <h3 class="sub">Sharps &amp; flats</h3>
+    <p class="note">By default the grid shows only the notes of your scale, so everything you draw sounds right. Turn on <b>Extra notes</b> in Settings to get the in-between semitones as recessed rows — the black keys — for accidentals and key changes. You can also switch the row names between sharps (C♯) and flats (D♭).</p>
     <h3 class="sub">Patterns &amp; song</h3>
     <p class="note">Each of the eight patterns is a full grid of its own. Build a few, then chain them in the <b>Song</b> strip and switch the transport from <b>Loop</b> to <b>Song</b> to hear the arrangement end to end.</p>
     <p class="note dim" id="about-line"></p>

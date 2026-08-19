@@ -148,6 +148,7 @@ kbd {
   padding: 7px 9px; min-width: 52px; text-align: center;
 }
 .pos i { color: var(--text-faint); font-style: normal; }
+.pos.paused { color: var(--text-faint); }
 
 .tempo { display: flex; align-items: center; gap: 8px; flex: none; }
 .tempo-label { color: var(--text-dim); font-size: 12px; text-transform: uppercase; letter-spacing: .6px; }
