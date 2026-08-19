@@ -1,9 +1,19 @@
 #!/usr/bin/env node
 /*
- * Generates the app icon (assets/icon.png + assets/icon.ico) from code, so the
- * repo needs no binary design assets and the desktop build has a real icon.
+ * Generates every app icon from code, so the repo needs no binary design
+ * assets:
  *
- * Drawn at 4× and box-filtered down, which gives clean anti-aliased edges
+ *   assets/icon.png       256px, rounded — desktop app icon
+ *   assets/icon.ico       the same, for Windows
+ *   assets/icon-180.png   apple-touch-icon: what iOS puts on the Home Screen
+ *   assets/icon-192.png   web app manifest
+ *   assets/icon-512.png   web app manifest / install prompts
+ *
+ * Home Screen icons are drawn full-bleed with the bars pulled into the middle
+ * 80%: iOS and Android apply their own rounded mask, so a square that fills the
+ * tile avoids double-rounded corners and never clips the artwork.
+ *
+ * Drawn at 4x and box-filtered down, which gives clean anti-aliased edges
  * without pulling in an image library.
  */
 
@@ -13,9 +23,8 @@ import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const SIZE = 256;
 const SS = 4;                       // supersample factor
-const W = SIZE * SS;
+const DESIGN = 256;                 // the artwork is laid out in a 256px square
 
 const BG = [0x10, 0x13, 0x1f, 255];
 const BARS = [
@@ -26,8 +35,6 @@ const BARS = [
 
 /* ------------------------------- drawing ------------------------------- */
 
-const buf = new Uint8Array(W * W * 4);
-
 function inRoundRect(px, py, x, y, w, h, r) {
   if (px < x || py < y || px > x + w || py > y + h) return false;
   const cx = Math.min(Math.max(px, x + r), x + w - r);
@@ -37,47 +44,68 @@ function inRoundRect(px, py, x, y, w, h, r) {
   return dx * dx + dy * dy <= r * r + 0.0001;
 }
 
-function fillRoundRect(x, y, w, h, r, color) {
-  const x0 = Math.max(0, Math.floor(x * SS));
-  const y0 = Math.max(0, Math.floor(y * SS));
-  const x1 = Math.min(W, Math.ceil((x + w) * SS));
-  const y1 = Math.min(W, Math.ceil((y + h) * SS));
-  for (let py = y0; py < y1; py++) {
-    for (let px = x0; px < x1; px++) {
-      if (!inRoundRect(px / SS + 0.5 / SS, py / SS + 0.5 / SS, x, y, w, h, r)) continue;
-      const i = (py * W + px) * 4;
-      buf[i] = color[0];
-      buf[i + 1] = color[1];
-      buf[i + 2] = color[2];
-      buf[i + 3] = color[3];
-    }
-  }
-}
+/**
+ * @param {number} size   output size in pixels
+ * @param {number} radius corner radius, in output pixels (0 = full-bleed square)
+ * @param {number} inset  how much of the tile the artwork uses (1 = as designed)
+ */
+function renderIcon({ size, radius, inset = 1 }) {
+  const W = size * SS;
+  const buf = new Uint8Array(W * W * 4);
+  const f = size / DESIGN;
+  const c = DESIGN / 2;
 
-fillRoundRect(0, 0, SIZE, SIZE, 56, BG);
-for (const b of BARS) fillRoundRect(b.x, b.y, b.w, b.h, 16, b.color);
-
-/* --------------------------- downsample to 256 --------------------------- */
-
-const out = new Uint8Array(SIZE * SIZE * 4);
-for (let y = 0; y < SIZE; y++) {
-  for (let x = 0; x < SIZE; x++) {
-    let r = 0, g = 0, b = 0, a = 0;
-    for (let sy = 0; sy < SS; sy++) {
-      for (let sx = 0; sx < SS; sx++) {
-        const i = ((y * SS + sy) * W + (x * SS + sx)) * 4;
-        const al = buf[i + 3] / 255;
-        r += buf[i] * al; g += buf[i + 1] * al; b += buf[i + 2] * al; a += al;
+  const fill = (x, y, w, h, r, color) => {
+    const x0 = Math.max(0, Math.floor(x * SS));
+    const y0 = Math.max(0, Math.floor(y * SS));
+    const x1 = Math.min(W, Math.ceil((x + w) * SS));
+    const y1 = Math.min(W, Math.ceil((y + h) * SS));
+    for (let py = y0; py < y1; py++) {
+      for (let px = x0; px < x1; px++) {
+        if (!inRoundRect(px / SS + 0.5 / SS, py / SS + 0.5 / SS, x, y, w, h, r)) continue;
+        const i = (py * W + px) * 4;
+        buf[i] = color[0];
+        buf[i + 1] = color[1];
+        buf[i + 2] = color[2];
+        buf[i + 3] = color[3];
       }
     }
-    const n = SS * SS;
-    const o = (y * SIZE + x) * 4;
-    // Premultiplied average, then un-premultiply so edges stay the right colour.
-    out[o] = a > 0 ? Math.round(r / a) : 0;
-    out[o + 1] = a > 0 ? Math.round(g / a) : 0;
-    out[o + 2] = a > 0 ? Math.round(b / a) : 0;
-    out[o + 3] = Math.round((a / n) * 255);
+  };
+
+  fill(0, 0, size, size, radius, BG);
+  for (const b of BARS) {
+    fill(
+      (c + (b.x - c) * inset) * f,
+      (c + (b.y - c) * inset) * f,
+      b.w * inset * f,
+      b.h * inset * f,
+      16 * inset * f,
+      b.color,
+    );
   }
+
+  // Box-filter down to the output size.
+  const out = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      let r = 0, g = 0, b = 0, a = 0;
+      for (let sy = 0; sy < SS; sy++) {
+        for (let sx = 0; sx < SS; sx++) {
+          const i = ((y * SS + sy) * W + (x * SS + sx)) * 4;
+          const al = buf[i + 3] / 255;
+          r += buf[i] * al; g += buf[i + 1] * al; b += buf[i + 2] * al; a += al;
+        }
+      }
+      const n = SS * SS;
+      const o = (y * size + x) * 4;
+      // Premultiplied average, then un-premultiply so edges stay the right colour.
+      out[o] = a > 0 ? Math.round(r / a) : 0;
+      out[o + 1] = a > 0 ? Math.round(g / a) : 0;
+      out[o + 2] = a > 0 ? Math.round(b / a) : 0;
+      out[o + 3] = Math.round((a / n) * 255);
+    }
+  }
+  return out;
 }
 
 /* ------------------------------ PNG writer ------------------------------ */
@@ -145,9 +173,26 @@ function encodeIco(png, size) {
   return Buffer.concat([dir, png]);
 }
 
-const png = encodePng(out, SIZE);
 const dir = path.join(root, 'assets');
 fs.mkdirSync(dir, { recursive: true });
-fs.writeFileSync(path.join(dir, 'icon.png'), png);
-fs.writeFileSync(path.join(dir, 'icon.ico'), encodeIco(png, SIZE));
-console.log(`wrote assets/icon.png (${(png.length / 1024).toFixed(1)} KB) and assets/icon.ico`);
+
+const written = [];
+function emit(file, pixels, size) {
+  const png = encodePng(pixels, size);
+  fs.writeFileSync(path.join(dir, file), png);
+  written.push(`${file} (${(png.length / 1024).toFixed(1)} KB)`);
+  return png;
+}
+
+// Desktop app icon: rounded, as designed.
+const appIcon = renderIcon({ size: 256, radius: 56 });
+const appPng = emit('icon.png', appIcon, 256);
+fs.writeFileSync(path.join(dir, 'icon.ico'), encodeIco(appPng, 256));
+written.push('icon.ico');
+
+// Home Screen icons: square and full-bleed, artwork inside the safe zone.
+for (const size of [180, 192, 512]) {
+  emit(`icon-${size}.png`, renderIcon({ size, radius: 0, inset: 0.78 }), size);
+}
+
+console.log('wrote ' + written.join(', '));

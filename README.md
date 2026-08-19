@@ -13,6 +13,7 @@ synthesised in the browser, so it loads instantly and keeps working offline.
 | **Play online** | https://zdstudios.github.io/music-lab/ |
 | **Offline single file** | https://zdstudios.github.io/music-lab/offline.html — save the page, open it any time |
 | **Windows / macOS / Linux app** | see [Desktop build](#desktop-build) |
+| **iPhone / Android** | open the link, then *Add to Home Screen* — it gets its own icon and opens full screen |
 
 ---
 
@@ -72,6 +73,9 @@ synthesised in the browser, so it loads instantly and keeps working offline.
   Songs from the first version's save slots are carried over automatically.
 - Autosave, so closing the tab never loses the song you are working on.
 - 7 themes, light and dark. Works on phones and tablets.
+- Add it to an iPhone or Android Home Screen and it launches like an app: its
+  own icon, no browser chrome, and the bars keep clear of the notch and the
+  home indicator.
 
 ## Keyboard
 
@@ -127,6 +131,7 @@ apps → Run workflow**. It builds all three platforms and uploads the `.exe`,
 
 ```
 index.html               markup for the whole UI
+manifest.webmanifest     web app manifest, for installing to a Home Screen
 src/
   main.js                app wiring: transport, shortcuts, recording, export
   core/
@@ -152,7 +157,7 @@ electron/                desktop shell (main + preload)
 scripts/
   serve.mjs              dev server
   bundle-standalone.mjs  inlines everything into one HTML file
-  make-icon.mjs          draws the app icon from code
+  make-icon.mjs          draws every app icon from code (desktop + Home Screen)
 ```
 
 The grid is a single canvas that only draws the cells currently on screen, so

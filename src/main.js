@@ -202,7 +202,13 @@ function updateUndoButtons() {
 function applyTheme() {
   document.documentElement.dataset.theme = store.project.theme || 'aurora';
   store$.savePrefs({ theme: store.project.theme });
-  requestAnimationFrame(() => grid.refreshTheme());
+  requestAnimationFrame(() => {
+    grid.refreshTheme();
+    // Keep the phone's status bar and the browser chrome in step with the theme.
+    const meta = document.querySelector('meta[name="theme-color"]');
+    const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+    if (meta && bg) meta.setAttribute('content', bg);
+  });
 }
 
 function hideHint() {
