@@ -198,8 +198,8 @@
   </div>
 </section>
 
-<section class="panel" id="panel-export" hidden aria-label="Save, share and export">
-  <header class="panel-head"><h2>Save &amp; share</h2><button class="panel-x" data-close>✕</button></header>
+<section class="panel" id="panel-export" hidden aria-label="Songs, sharing and export">
+  <header class="panel-head"><h2>Songs</h2><button class="panel-x" data-close>✕</button></header>
   <div class="panel-body">
     <label class="field"><span>Song name</span><input id="song-name" type="text" maxlength="60" placeholder="Untitled song"></label>
 
@@ -210,20 +210,19 @@
       <button class="btn primary" id="btn-copy-link">Copy</button>
     </div>
 
-    <h3 class="sub">This device</h3>
-    <div class="row">
-      <button class="btn" id="btn-save-local">Save</button>
-      <select id="local-list" class="grow"></select>
-      <button class="btn" id="btn-load-local">Open</button>
-      <button class="btn danger" id="btn-del-local">Delete</button>
+    <h3 class="sub">Your library</h3>
+    <div class="row wrap">
+      <button class="btn primary" id="btn-save-local">Save this song</button>
+      <button class="btn" id="btn-import-json">Import a file…</button>
     </div>
+    <div id="library" class="library"></div>
+    <p class="note dim" id="lib-usage"></p>
 
     <h3 class="sub">Export</h3>
     <div class="row wrap">
       <button class="btn" id="btn-export-wav">🎧 Audio (.wav)</button>
       <button class="btn" id="btn-export-midi">🎹 MIDI (.mid)</button>
       <button class="btn" id="btn-export-json">📄 Project (.json)</button>
-      <button class="btn" id="btn-import-json">📂 Import project</button>
     </div>
     <label class="slider-row"><span>Repeats in export</span><input id="export-loops" type="range" min="1" max="8" step="1" value="2"><output id="out-loops">2</output></label>
     <div id="export-progress" class="progress" hidden><div></div></div>
@@ -263,6 +262,8 @@
     <p class="note">Press <b>Record</b> then <b>Play</b> and sing, hum, or play a MIDI keyboard — notes land on the selected track, snapped to the grid and to your scale. You can also just tap the letter keys in time.</p>
     <h3 class="sub">Sharps &amp; flats</h3>
     <p class="note">By default the grid shows only the notes of your scale, so everything you draw sounds right. Turn on <b>Extra notes</b> in Settings to get the in-between semitones as recessed rows — the black keys — for accidentals and key changes. You can also switch the row names between sharps (C♯) and flats (D♭).</p>
+    <h3 class="sub">Your library</h3>
+    <p class="note">Open <b>Share</b> to see every song you have saved, each with a little picture of its notes. Songs live in this browser — no account, nothing uploaded — so clearing your browsing data would erase them. Export a <b>.json</b> file or copy a link for anything you want to keep or move to another device.</p>
     <h3 class="sub">Patterns &amp; song</h3>
     <p class="note">Each of the eight patterns is a full grid of its own. Build a few, then chain them in the <b>Song</b> strip and switch the transport from <b>Loop</b> to <b>Song</b> to hear the arrangement end to end.</p>
     <p class="note dim" id="about-line"></p>

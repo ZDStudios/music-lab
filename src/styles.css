@@ -370,6 +370,51 @@ input.mono, select.grow, #share-url {
 .progress { height: 5px; background: var(--bg-3); border-radius: 3px; overflow: hidden; }
 .progress > div { height: 100%; width: 0; background: var(--accent); transition: width .12s; }
 
+/* ---------- song library ---------- */
+.library { display: flex; flex-direction: column; gap: 8px; }
+.lib-filter {
+  height: 32px; border-radius: 9px; padding: 0 10px; width: 100%;
+  background: var(--bg-3); border: 1px solid var(--line); color: var(--text); font-size: 12.5px;
+}
+.song-list {
+  display: flex; flex-direction: column; gap: 7px;
+  max-height: 42vh; overflow-y: auto; padding-right: 2px;
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+}
+.song-card {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px;
+  background: var(--bg-3); border: 1px solid var(--line); border-radius: 11px; padding: 8px;
+  cursor: pointer; transition: border-color .12s, background .12s;
+}
+.song-card:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.song-card.current { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--bg-3)); }
+.song-thumb {
+  width: 104px; height: 38px; border-radius: 7px; flex: none;
+  background: var(--grid-cell); border: 1px solid var(--line-soft); display: block;
+}
+.song-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.song-title {
+  background: transparent; border: none; padding: 1px 3px; border-radius: 5px;
+  font-size: 13px; font-weight: 650; color: var(--text);
+  width: 100%; text-overflow: ellipsis;
+}
+.song-title:hover { background: color-mix(in srgb, var(--text) 7%, transparent); }
+.song-title:focus { background: var(--bg); outline: 1px solid var(--line); }
+.song-sub {
+  font-size: 10.5px; color: var(--text-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.song-sub.dim { color: var(--text-faint); }
+.song-sub b { color: var(--accent); font-weight: 700; }
+.song-actions { display: flex; flex-direction: column; gap: 4px; flex: none; }
+.song-actions .mini-btn { width: 100%; justify-content: center; text-align: center; }
+.empty-lib {
+  margin: 0; padding: 14px; border-radius: 11px; font-size: 12.5px; line-height: 1.55;
+  border: 1px dashed var(--line); color: var(--text-dim); text-align: center;
+}
+.popmenu .danger-item { color: var(--danger); }
+.confirm-menu { min-width: 208px; }
+
 .mixer-strips { display: flex; flex-direction: column; gap: 9px; }
 .strip {
   background: var(--bg-3); border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px;

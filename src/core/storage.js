@@ -1,27 +1,19 @@
-/* Save slots in localStorage, plus packing a whole song into a URL hash. */
+/* The song library in localStorage, plus packing a whole song into a URL hash. */
 
-import { packProject, unpackProject } from './project.js';
+import { packProject, unpackProject, totalSteps } from './project.js';
+import { getScale } from './scales.js';
 
-const SLOT_KEY = 'mls.songs.v1';
+const LIB_KEY = 'mls.library.v2';
+const OLD_SLOT_KEY = 'mls.songs.v1';      // name-keyed slots from the first version
 const AUTOSAVE_KEY = 'mls.autosave.v1';
 const PREF_KEY = 'mls.prefs.v1';
 
-/* ---------------- local save slots ---------------- */
-
-export function listSongs() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(SLOT_KEY) || '{}');
-    return Object.keys(raw).sort().map((name) => ({ name, at: raw[name].at || 0 }));
-  } catch {
-    return [];
-  }
-}
-
-export function saveSong(name, project) {
-  const all = readAll();
-  all[name] = { at: Date.now(), data: packProject(project) };
-  write(SLOT_KEY, all);
-}
+/* ------------------------------------------------------------------ *
+ * The library
+ *
+ * Entries live in localStorage — this browser, this device, no account.
+ * Shape: { id, name, at, data: <packed project>, meta: <card summary> }
+ * ------------------------------------------------------------------ */
 
 /** Storage can be unavailable (private mode, sandboxed frame) or full. */
 function write(key, value) {
@@ -33,22 +25,148 @@ function write(key, value) {
   }
 }
 
-export function loadSong(name) {
-  const all = readAll();
-  return all[name] ? unpackProject(all[name].data) : null;
+function newId() {
+  return 's' + Date.now().toString(36) + Math.floor(Math.random() * 46656).toString(36);
 }
 
-export function deleteSong(name) {
-  const all = readAll();
-  delete all[name];
-  write(SLOT_KEY, all);
-}
-
-function readAll() {
+function readLibrary() {
+  let lib;
   try {
-    return JSON.parse(localStorage.getItem(SLOT_KEY) || '{}');
+    lib = JSON.parse(localStorage.getItem(LIB_KEY) || 'null');
   } catch {
-    return {};
+    lib = null;
+  }
+  if (lib && typeof lib === 'object') return lib;
+  return migrateOldSlots();
+}
+
+/** Carry songs over from the original name-keyed save slots, once. */
+function migrateOldSlots() {
+  let old;
+  try {
+    old = JSON.parse(localStorage.getItem(OLD_SLOT_KEY) || 'null');
+  } catch {
+    old = null;
+  }
+  const lib = {};
+  if (old && typeof old === 'object') {
+    for (const [name, entry] of Object.entries(old)) {
+      if (!entry || !entry.data) continue;
+      const id = newId();
+      lib[id] = { id, name, at: entry.at || Date.now(), data: entry.data, meta: summarize(entry.data) };
+    }
+    // Only drop the old copy once the new one is safely written.
+    if (write(LIB_KEY, lib)) {
+      try { localStorage.removeItem(OLD_SLOT_KEY); } catch { /* keep it */ }
+    }
+  }
+  return lib;
+}
+
+/** The few facts a library card shows, so browsing never unpacks a song. */
+function summarize(packed) {
+  const patterns = (packed.patterns || []).filter(
+    (pat) => pat && Object.values(pat.notes || {}).some((n) => n && n.length));
+  let notes = 0;
+  for (const pat of patterns) {
+    for (const list of Object.values(pat.notes || {})) notes += list.length;
+  }
+  return {
+    tempo: packed.tempo,
+    root: packed.root,
+    scale: getScale(packed.scale).name,
+    bars: packed.bars,
+    steps: totalSteps(packed),
+    tracks: (packed.tracks || []).length,
+    patterns: patterns.length,
+    notes,
+  };
+}
+
+export function listLibrary() {
+  const lib = readLibrary();
+  return Object.values(lib)
+    .filter((e) => e && e.id && e.data)
+    .sort((a, b) => (b.at || 0) - (a.at || 0));
+}
+
+export function getLibraryEntry(id) {
+  return readLibrary()[id] || null;
+}
+
+/** Open a saved song. Returns a project, or null if the entry has gone. */
+export function openFromLibrary(id) {
+  const entry = getLibraryEntry(id);
+  if (!entry) return null;
+  const project = unpackProject(entry.data);
+  project.libraryId = id;
+  project.name = entry.name;
+  return project;
+}
+
+/**
+ * Save the project. Pass an id to update that entry, otherwise a new one is
+ * created. Returns the id, or null when storage refused the write.
+ */
+export function saveToLibrary(project, id = null) {
+  const lib = readLibrary();
+  const key = (id && lib[id]) ? id : newId();
+  const data = packProject(project);
+  const name = (project.name || '').trim() || 'Untitled song';
+  lib[key] = { id: key, name, at: Date.now(), data, meta: summarize(data) };
+  return write(LIB_KEY, lib) ? key : null;
+}
+
+export function renameInLibrary(id, name) {
+  const lib = readLibrary();
+  if (!lib[id]) return false;
+  lib[id].name = (name || '').trim().slice(0, 60) || 'Untitled song';
+  if (lib[id].data) lib[id].data.name = lib[id].name;
+  return write(LIB_KEY, lib);
+}
+
+export function deleteFromLibrary(id) {
+  const lib = readLibrary();
+  if (!lib[id]) return false;
+  delete lib[id];
+  return write(LIB_KEY, lib);
+}
+
+export function duplicateInLibrary(id) {
+  const lib = readLibrary();
+  const entry = lib[id];
+  if (!entry) return null;
+  const key = newId();
+  lib[key] = { ...entry, id: key, at: Date.now(), name: nextCopyName(lib, entry.name) };
+  return write(LIB_KEY, lib) ? key : null;
+}
+
+function nextCopyName(lib, name) {
+  const base = name.replace(/ \(copy( \d+)?\)$/, '');
+  const taken = new Set(Object.values(lib).map((e) => e.name));
+  if (!taken.has(`${base} (copy)`)) return `${base} (copy)`;
+  for (let i = 2; i < 99; i++) {
+    if (!taken.has(`${base} (copy ${i})`)) return `${base} (copy ${i})`;
+  }
+  return `${base} (copy)`;
+}
+
+export function libraryUsage() {
+  let bytes = 0;
+  try {
+    bytes = (localStorage.getItem(LIB_KEY) || '').length;
+  } catch { /* unavailable */ }
+  return { count: listLibrary().length, bytes };
+}
+
+export function storageAvailable() {
+  try {
+    const probe = '__mls_probe__';
+    localStorage.setItem(probe, '1');
+    localStorage.removeItem(probe);
+    return true;
+  } catch {
+    return false;
   }
 }
 

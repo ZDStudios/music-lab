@@ -17,6 +17,7 @@ import { MicPitch } from './audio/mic.js';
 import { GridView } from './ui/grid.js';
 import { Rail } from './ui/rail.js';
 import { Panels } from './ui/panels.js';
+import { Library } from './ui/library.js';
 import { openPopover, closePopover } from './ui/popover.js';
 import { instrumentIcon } from './ui/icons.js';
 import { toast } from './ui/toast.js';
@@ -85,7 +86,12 @@ const panels = new Panels({
       markDirty();
     },
     onTheme: () => { applyTheme(); markDirty(); },
-    onOpen: (name) => { if (name === 'export') refreshShareLink(); },
+    onOpen: (name) => {
+      if (name !== 'export') return;
+      refreshShareLink();
+      library.render();
+      updateSaveButton();
+    },
   },
 });
 
@@ -881,6 +887,13 @@ $('song-name').addEventListener('input', (e) => {
   document.title = (store.project.name ? store.project.name + ' — ' : '') + 'Music Lab Studio';
   markDirty();
 });
+$('song-name').addEventListener('change', () => {
+  const id = store.project.libraryId;
+  if (id && store$.getLibraryEntry(id)) {
+    store$.renameInLibrary(id, store.project.name);
+    library.render();
+  }
+});
 
 $('btn-copy-link').addEventListener('click', async () => {
   await refreshShareLink();
@@ -897,43 +910,65 @@ $('btn-copy-link').addEventListener('click', async () => {
   history.replaceState(null, '', '#' + url.split('#')[1]);
 });
 
-function refreshLocalList() {
-  const sel = $('local-list');
-  const songs = store$.listSongs();
-  sel.innerHTML = songs.length
-    ? songs.map((s) => `<option value="${s.name}">${s.name}</option>`).join('')
-    : '<option value="">— nothing saved yet —</option>';
-}
+/* ---------------------------- song library ---------------------------- */
 
+const library = new Library({
+  root: $('library'),
+  store,
+  hooks: {
+    onOpen: (project) => {
+      stop();
+      store.replace(project);
+      toast(`Opened “${project.name}”`);
+    },
+    onRenamed: (id, name) => {
+      if (store.project.libraryId === id) {
+        store.project.name = name;
+        $('song-name').value = name;
+        document.title = (name ? name + ' — ' : '') + 'Music Lab Studio';
+      }
+    },
+    onExport: (entry) => {
+      const blob = new Blob([JSON.stringify(entry.data, null, 1)], { type: 'application/json' });
+      saveBlob(blob, store$.safeFileName(entry.name) + '.json');
+    },
+    onCopyLink: async (entry) => {
+      try {
+        const url = await store$.shareUrl(store$.openFromLibrary(entry.id) || store.project);
+        await navigator.clipboard.writeText(url);
+        toast('Link copied');
+      } catch {
+        toast('Could not copy the link — open the song and use Copy above.', { error: true });
+      }
+    },
+    onMessage: (message, error = false) => toast(message, { error }),
+  },
+});
+
+/** Save keeps you on the same library entry; it never quietly makes copies. */
 function doSaveLocal() {
   const name = (store.project.name || '').trim() || 'Untitled song';
   store.project.name = name;
   $('song-name').value = name;
-  store$.saveSong(name, store.project);
-  refreshLocalList();
-  $('local-list').value = name;
-  toast(`Saved “${name}” on this device`);
+
+  const existing = store.project.libraryId && store$.getLibraryEntry(store.project.libraryId);
+  const id = store$.saveToLibrary(store.project, existing ? store.project.libraryId : null);
+  if (!id) {
+    toast('This browser would not store the song — check that site data is allowed.', { error: true, ms: 4000 });
+    return;
+  }
+  store.project.libraryId = id;
+  library.render();
+  updateSaveButton();
+  toast(existing ? `Saved “${name}”` : `“${name}” added to your library`);
+}
+
+function updateSaveButton() {
+  const linked = store.project.libraryId && store$.getLibraryEntry(store.project.libraryId);
+  $('btn-save-local').textContent = linked ? 'Save changes' : 'Save this song';
 }
 
 $('btn-save-local').addEventListener('click', doSaveLocal);
-
-$('btn-load-local').addEventListener('click', () => {
-  const name = $('local-list').value;
-  if (!name) return;
-  const loaded = store$.loadSong(name);
-  if (!loaded) return toast('Could not open that song', { error: true });
-  stop();
-  store.replace(loaded);
-  toast(`Opened “${name}”`);
-});
-
-$('btn-del-local').addEventListener('click', () => {
-  const name = $('local-list').value;
-  if (!name) return;
-  store$.deleteSong(name);
-  refreshLocalList();
-  toast(`Deleted “${name}”`);
-});
 
 $('export-loops').addEventListener('input', (e) => { $('out-loops').textContent = e.target.value; });
 
@@ -1022,9 +1057,12 @@ $('file-input').addEventListener('change', async (e) => {
   try {
     const text = await file.text();
     const loaded = unpackProject(JSON.parse(text));
+    loaded.libraryId = null;
     stop();
     store.replace(loaded);
-    toast('Project loaded');
+    library.render();
+    updateSaveButton();
+    toast(`Imported “${loaded.name || 'song'}” — press Save to keep it in your library`, { ms: 3600 });
   } catch {
     toast('That file could not be read as a project', { error: true });
   }
@@ -1036,6 +1074,8 @@ $('btn-new').addEventListener('click', () => {
   const fresh = createProject();
   fresh.theme = store.project.theme;
   store.replace(fresh);
+  library.render();
+  updateSaveButton();
   toast('Fresh song');
 });
 
@@ -1044,6 +1084,8 @@ $('btn-demo').addEventListener('click', () => {
   const demo = createDemoProject();
   demo.theme = store.project.theme;
   store.replace(demo);
+  library.render();
+  updateSaveButton();
   toast('Demo loaded — press play');
   hideHint();
 });
@@ -1059,6 +1101,7 @@ async function boot() {
   if (location.hash.length > 3) {
     try {
       project = await store$.decodeShare(location.hash);
+      project.libraryId = null;      // a shared song is not yet on this shelf
       source = 'link';
     } catch {
       toast('That shared link could not be read', { error: true });
@@ -1077,8 +1120,13 @@ async function boot() {
 
   store.state.project = project;
   adoptProject();
-  refreshLocalList();
+  library.render();
+  updateSaveButton();
   updateUndoButtons();
+  if (!store$.storageAvailable()) {
+    toast('This browser is not letting the app store songs, so the library and autosave are off.',
+      { error: true, ms: 5000 });
+  }
 
   $('about-line').textContent =
     `Music Lab Studio ${window.desktop?.version ? 'desktop ' + window.desktop.version : '1.0'} · everything runs on your device — no accounts, no uploads.`;

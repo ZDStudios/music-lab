@@ -66,7 +66,11 @@ synthesised in the browser, so it loads instantly and keeps working offline.
 - Export **.wav** (rendered offline, faster than real time), **.mid** (one MIDI
   track per part, with program changes and GM drum mapping), or **.json**.
 - **Share links** hold the entire song in the URL — nothing is uploaded.
-- Autosave, plus named save slots in the browser.
+- A **song library** in the browser: save as many songs as you like and browse
+  them as cards, each with a little picture of its notes, its key, tempo and
+  when you saved it. Open, rename, duplicate, export or delete from the card.
+  Songs from the first version's save slots are carried over automatically.
+- Autosave, so closing the tab never loses the song you are working on.
 - 7 themes, light and dark. Works on phones and tablets.
 
 ## Keyboard
@@ -130,7 +134,7 @@ src/
     state.js             store with snapshot-based undo/redo
     scales.js            scales, the pitch ladder, note colours
     generate.js          the ✨ Generate part writers
-    storage.js           save slots, autosave, share-link packing
+    storage.js           the song library, autosave, share-link packing
     midi.js              MIDI file export + Web MIDI input
   audio/
     instruments.js       every voice, synthesised from oscillators and noise
@@ -141,6 +145,7 @@ src/
     grid.js              the virtualised canvas grid
     rail.js              track list
     panels.js            settings, mixer, share
+    library.js           saved-song shelf with note thumbnails
     icons.js             instrument pictograms
     popover.js  toast.js
 electron/                desktop shell (main + preload)

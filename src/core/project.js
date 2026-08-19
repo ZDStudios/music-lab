@@ -151,6 +151,7 @@ export function createProject() {
       reverb: 0.22, reverbSize: 0.6, delay: 0, delayTime: 0.5,
       tone: 1, drive: 0.08, chorus: 0.15, master: 0.85,
     },
+    libraryId: null,        // set when the song lives in the browser library
     showLabels: true,
     useFlats: false,
     accidentals: false,
