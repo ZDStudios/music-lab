@@ -60,6 +60,13 @@
       <output id="tempo-val">112</output>
     </label>
 
+    <div class="length" role="group" aria-label="Song length" title="Song length — hold + or − to keep going">
+      <button id="btn-len-dec" class="len-btn" aria-label="One bar shorter">−</button>
+      <input id="len-bars" class="len-input" type="number" min="1" max="999" step="1" inputmode="numeric" value="4" aria-label="Bars">
+      <span id="len-unit" class="len-unit">bars</span>
+      <button id="btn-len-inc" class="len-btn" aria-label="One bar longer">+</button>
+    </div>
+
     <div class="top-actions">
       <button id="btn-undo" class="btn ghost" title="Undo  (Ctrl+Z)">
         <svg viewBox="0 0 24 24"><path d="M9 7H15a5 5 0 010 10H8M9 7L6 4M9 7L6 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -174,7 +181,7 @@
 
     <h3 class="sub">Length &amp; feel</h3>
     <div class="field-grid">
-      <label class="field"><span>Bars</span><select id="set-bars"></select></label>
+      <label class="field"><span>Bars (1–999)</span><input id="set-bars" type="number" min="1" max="999" step="1" inputmode="numeric"></label>
       <label class="field"><span>Beats per bar</span><select id="set-beats"></select></label>
       <label class="field"><span>Split beats into</span><select id="set-splits"></select></label>
     </div>
@@ -185,7 +192,7 @@
     <div class="field-grid">
       <label class="field"><span>Theme</span><select id="set-theme"></select></label>
     </div>
-    <p class="note">Changing bars, beats or splits keeps your notes — anything past the new end is remembered until you shorten the song again.</p>
+    <p class="note">Songs can run to 999 bars — use <b>+ bar</b> at the end of the grid or the length control at the top. Shortening keeps your notes: anything past the new end comes back when you make the song longer again.</p>
   </div>
 </section>
 
@@ -265,12 +272,14 @@
       <tr><td><kbd>Alt</kbd>+click</td><td>Cycle a note between soft, normal and accented</td></tr>
       <tr><td><kbd>A</kbd> <kbd>S</kbd> … <kbd>;</kbd></td><td>Play the scale live on the home row — hold <kbd>Shift</kbd> for the register above</td></tr>
       <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Previous / next pattern</td></tr>
-      <tr><td><kbd>Ctrl</kbd>+<kbd>wheel</kbd></td><td>Zoom the grid &nbsp;·&nbsp; <kbd>+</kbd> <kbd>−</kbd> also work</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>wheel</kbd></td><td>Zoom the grid &nbsp;·&nbsp; <kbd>+</kbd> <kbd>−</kbd> also work &nbsp;·&nbsp; wheel over the bar numbers to move through a long song</td></tr>
       <tr><td><kbd>R</kbd> <kbd>T</kbd> <kbd>P</kbd></td><td>Record · Add track · Metronome (pulse)</td></tr>
       <tr><td><kbd>O</kbd> <kbd>I</kbd> <kbd>E</kbd></td><td>Options · Mix &amp; FX · Share</td></tr>
     </table>
     <h3 class="sub">Recording</h3>
     <p class="note">Press <b>Record</b> then <b>Play</b> and sing, hum, or play a MIDI keyboard — notes land on the selected track, snapped to the grid and to your scale. You can also just tap the letter keys in time.</p>
+    <h3 class="sub">Longer songs &amp; more notes</h3>
+    <p class="note">There is always a <b>+ bar</b> column after the last bar: click it to add a bar, or draw into it to add a bar with your note in it. The length control at the top takes a number too — up to 999 bars. Melody tracks have <b>+ higher</b> and <b>+ lower</b> rows that add an octave of notes each time, from the lowest C on a piano to the highest. Your notes stay on their pitches as the range grows.</p>
     <h3 class="sub">Sharps &amp; flats</h3>
     <p class="note">By default the grid shows only the notes of your scale, so everything you draw sounds right. Turn on <b>Extra notes</b> in Settings to get the in-between semitones as recessed rows — the black keys — for accidentals and key changes. You can also switch the row names between sharps (C♯) and flats (D♭).</p>
     <h3 class="sub">Your library</h3>

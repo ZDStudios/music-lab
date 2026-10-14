@@ -9,6 +9,7 @@
 
 import {
   activePattern, notesOf, noteAt, totalSteps, stepsPerBar, getKit, findTrack,
+  MAX_BARS, rangeRoom,
 } from '../core/project.js';
 import { pitchColor } from '../core/scales.js';
 
@@ -16,6 +17,12 @@ const MIN_CELL = 15;
 const MAX_CELL = 58;
 const MIN_ROW = 12;
 const MAX_ROW = 34;
+const EXTEND_W = 48;      // the "+ bar" column after the last bar
+const MIN_ZOOM = 0.3;     // far enough out to see a long song at a glance
+const MAX_ZOOM = 2.6;
+
+/** Rows that hold notes, as opposed to folded lanes and "+ more notes" rows. */
+const isNoteRow = (row) => !!row && (row.type === 'melody' || row.type === 'drum');
 
 const VEL_STEPS = [0.45, 0.85, 1.0];
 
@@ -81,8 +88,15 @@ export class GridView {
     canvas.addEventListener('pointerup', (e) => this._onRulerUp(e));
     canvas.addEventListener('pointercancel', (e) => this._onRulerUp(e));
     canvas.addEventListener('pointerleave', () => {
-      if (this.rulerHover) { this.rulerHover = false; this.invalidate(); }
+      if (this.rulerHover || this.rulerExtendHover) {
+        this.rulerHover = false;
+        this.rulerExtendHover = false;
+        this.invalidate();
+      }
     });
+    // Scrolling over the labels moves the grid: the ruler sideways, the
+    // gutter up and down.
+    canvas.addEventListener('wheel', (e) => this._onChromeWheel(e), { passive: false });
   }
 
   /* --------------------------- ruler scrubbing --------------------------- */
@@ -97,7 +111,35 @@ export class GridView {
     return Math.max(0, Math.min(totalSteps(this.store.project) - 1, step));
   }
 
+  /** Pointer position relative to the stage, plus what lies under it. */
+  _chromeHit(e) {
+    const rect = this.stage.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const contentX = x - this.gutter + this.scroller.scrollLeft;
+    return {
+      x, y,
+      inRuler: y >= 0 && y <= this.ruler && x >= this.gutter,
+      inGutter: x >= 0 && x < this.gutter && y > this.ruler,
+      inExtend: this.extendW > 0 && contentX >= this.contentW && contentX < this.contentW + this.extendW,
+      row: this.rows[Math.floor((y - this.ruler + this.scroller.scrollTop) / this.rowH)],
+    };
+  }
+
   _onRulerDown(e) {
+    const hit = this._chromeHit(e);
+    if (hit.inRuler && hit.inExtend) {
+      e.preventDefault();
+      this.extendSong();
+      return;
+    }
+    if (hit.inGutter && hit.row) {
+      e.preventDefault();
+      this.hooks.onFirstTouch?.();
+      if (hit.row.type === 'more') this.hooks.onMoreNotes?.(hit.row.dir);
+      else if (isNoteRow(hit.row)) this.hooks.onPreview?.(hit.row.track, hit.row.row, 0.85);
+      return;
+    }
     const step = this._rulerStep(e);
     if (step == null) return;
     e.preventDefault();
@@ -114,12 +156,59 @@ export class GridView {
       this.hooks.onScrub?.(step);
       return;
     }
-    const over = this._rulerStep(e) != null;
-    this.canvas.style.cursor = over ? 'ew-resize' : '';
+    const hit = this._chromeHit(e);
+    const extendHover = hit.inRuler && hit.inExtend;
+    if (extendHover !== !!this.rulerExtendHover) {
+      this.rulerExtendHover = extendHover;
+      this.invalidate();
+    }
+    const over = this._rulerStep(e) != null && !extendHover;
+    this.canvas.style.cursor = hit.inRuler && hit.inExtend ? 'pointer'
+      : over ? 'ew-resize'
+        : hit.inGutter && hit.row && hit.row.type !== 'fold' ? 'pointer' : '';
     if (over !== this.rulerHover) {
       this.rulerHover = over;
       this.invalidate();
     }
+  }
+
+  _onChromeWheel(e) {
+    const hit = this._chromeHit(e);
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      this.setZoom(this.zoom * (e.deltaY < 0 ? 1.12 : 0.89));
+      return;
+    }
+    if (hit.inRuler) {
+      e.preventDefault();
+      this.scroller.scrollLeft += Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    } else if (hit.inGutter) {
+      e.preventDefault();
+      this.scroller.scrollTop += e.deltaY;
+    }
+  }
+
+  /**
+   * Add a bar to the end of the song and keep the "+" column in view, so
+   * clicking it again and again keeps going.
+   */
+  extendSong(placeNote = null) {
+    const p = this.store.project;
+    if (p.bars >= MAX_BARS) return false;
+    const firstNewStep = totalSteps(p);
+    this.store.snapshot('extend');
+    this.hooks.onExtend?.(1);
+    if (placeNote) {
+      notesOf(activePattern(p), placeNote.track.id).push({ s: firstNewStep, p: placeNote.row, l: 1, v: 0.85 });
+      this.hooks.onPreview?.(placeNote.track, placeNote.row, 0.85);
+      this.hooks.onEdit?.();
+    }
+    this.store.endGesture();
+    if (this.contentW + this.extendW > this.viewW) {
+      this.scroller.scrollLeft = this.scroller.scrollWidth;
+    }
+    this.invalidate();
+    return true;
   }
 
   _onRulerUp(e) {
@@ -148,6 +237,7 @@ export class GridView {
     const pitches = this.getPitchList();
     this.rows = [];
     this.trackLanes = new Map();
+    const room = rangeRoom(p);
 
     for (const track of p.tracks) {
       const base = this.rows.length;
@@ -166,6 +256,12 @@ export class GridView {
         }
         this.trackLanes.set(track.id, { base, count: pieces.length, collapsed: false, track });
       } else {
+        // Each melody lane is bracketed by rows that add an octave of notes
+        // above or below, until the ladder reaches the edge of the piano.
+        if (room.up) {
+          this.rows.push({ track, type: 'more', dir: 1, label: '+ higher', color: track.color, first: true });
+        }
+        const pitchBase = this.rows.length;
         for (let i = pitches.length - 1; i >= 0; i--) {
           const pitch = pitches[i];
           this.rows.push({
@@ -173,10 +269,13 @@ export class GridView {
             label: pitch.name, color: pitchColor(pitch.pc, pitch.octave, p.octaves),
             root: pitch.degree === 0,
             accidental: pitch.inScale === false,
-            first: i === pitches.length - 1, last: i === 0,
+            first: !room.up && i === pitches.length - 1, last: !room.down && i === 0,
           });
         }
-        this.trackLanes.set(track.id, { base, count: pitches.length, collapsed: false, track });
+        if (room.down) {
+          this.rows.push({ track, type: 'more', dir: -1, label: '+ lower', color: track.color, last: true });
+        }
+        this.trackLanes.set(track.id, { base: pitchBase, count: pitches.length, collapsed: false, track });
       }
     }
   }
@@ -198,16 +297,21 @@ export class GridView {
     const viewW = Math.max(80, this.stage.clientWidth - this.gutter);
     const viewH = Math.max(60, this.stage.clientHeight - this.ruler);
 
-    const fitCell = viewW / steps;
+    // A short song stretches to fill the view, minus a column for "+ bar"
+    // so there is always somewhere to click to make it longer.
+    this.extendW = p.bars < MAX_BARS ? EXTEND_W : 0;
+    const fitCell = Math.max(1, viewW - this.extendW) / steps;
     this.cellW = Math.max(MIN_CELL * this.zoom, Math.min(MAX_CELL * this.zoom, fitCell));
+    // Zooming out squeezes time, not pitch: rows stay tall enough to hit.
+    const rowZoom = Math.max(0.8, this.zoom);
     const fitRow = viewH / rows;
-    this.rowH = Math.max(MIN_ROW * this.zoom, Math.min(MAX_ROW * this.zoom, fitRow));
+    this.rowH = Math.max(MIN_ROW * rowZoom, Math.min(MAX_ROW * rowZoom, fitRow));
 
     this.contentW = steps * this.cellW;
     this.contentH = rows * this.rowH;
     this.viewW = viewW;
     this.viewH = viewH;
-    this.spacer.style.width = Math.round(this.contentW) + 'px';
+    this.spacer.style.width = Math.round(this.contentW + this.extendW) + 'px';
     this.spacer.style.height = Math.round(this.contentH) + 'px';
 
     const dpr = Math.min(2.5, window.devicePixelRatio || 1);
@@ -262,15 +366,27 @@ export class GridView {
     g.clip();
     g.translate(this.gutter - sx, this.ruler - sy);
 
-    // row backgrounds
+    // Beat stripes are the same on every row, so paint them once — a long,
+    // zoomed-out song would otherwise be thousands of rectangles per frame.
+    const top = r0 * this.rowH;
+    const bottom = r1 * this.rowH;
+    g.fillStyle = t.cell;
+    g.fillRect(c0 * this.cellW, top, (c1 - c0) * this.cellW, bottom - top);
+    g.fillStyle = t.cellAlt;
+    for (let b = Math.floor(c0 / spb); b * spb < c1; b++) {
+      if (b % 2 === 0) continue;
+      const span = Math.min(spb, steps - b * spb);
+      g.fillRect(b * spb * this.cellW, top, span * this.cellW, bottom - top);
+    }
+
     for (let r = r0; r < r1; r++) {
       const row = this.rows[r];
       const y = r * this.rowH;
       const selTrack = row.track.id === p.selected;
-      for (let c = c0; c < c1; c++) {
-        const beatIndex = Math.floor(c / spb);
-        g.fillStyle = beatIndex % 2 === 0 ? t.cell : t.cellAlt;
-        g.fillRect(c * this.cellW, y, this.cellW, this.rowH);
+      if (row.type === 'more') {
+        g.fillStyle = withAlpha(t.bg, 0.55);
+        g.fillRect(c0 * this.cellW, y, (c1 - c0) * this.cellW, this.rowH);
+        continue;
       }
       if (row.type === 'fold') {
         g.fillStyle = withAlpha(row.color, 0.06);
@@ -289,13 +405,21 @@ export class GridView {
       }
     }
 
-    // grid lines
+    // grid lines — they thin out as the view zooms out
     g.lineWidth = 1;
+    const barEvery = this.barStride(5);
+    const beatW = spb * this.cellW;
     for (let c = c0; c <= c1; c++) {
       const x = Math.round(c * this.cellW) + 0.5;
       const isBar = c % bar === 0;
       const isBeat = c % spb === 0;
-      if (!isBeat && this.cellW < 11) continue;
+      if (isBar) {
+        if ((c / bar) % barEvery !== 0 && c !== steps) continue;
+      } else if (isBeat) {
+        if (beatW < 6) continue;
+      } else if (this.cellW < 11) {
+        continue;
+      }
       g.strokeStyle = isBar ? t.bar : isBeat ? t.beat : t.lineSoft;
       g.beginPath();
       g.moveTo(x, r0 * this.rowH);
@@ -327,7 +451,8 @@ export class GridView {
       const dim = track.mute || (p.tracks.some((x) => x.solo) && !track.solo);
 
       for (const note of notes) {
-        const len = Math.max(1, note.l || 1);
+        if (note.s >= steps) continue;          // past the end: kept, not shown
+        const len = Math.min(Math.max(1, note.l || 1), steps - note.s);
         if (note.s + len < c0 || note.s > c1) continue;
         const visual = lane.collapsed ? lane.base : lane.base + (lane.count - 1 - note.p);
         if (visual < r0 - 1 || visual > r1) continue;
@@ -396,6 +521,8 @@ export class GridView {
       g.setLineDash([]);
       g.globalAlpha = 1;
     }
+
+    this.drawExtensions(sx, sy, r0, r1);
     g.restore();
 
     this.drawGutter(r0, r1, sy);
@@ -411,6 +538,57 @@ export class GridView {
     g.moveTo(this.gutter - 0.5, 0);
     g.lineTo(this.gutter - 0.5, this.h);
     g.stroke();
+  }
+
+  /** The "+ bar" column after the end, and the words on the "+ notes" rows. */
+  drawExtensions(sx, sy, r0, r1) {
+    const g = this.ctx;
+    const t = this.theme;
+    const font = getComputedStyle(document.body).fontFamily;
+
+    for (let r = r0; r < r1; r++) {
+      const row = this.rows[r];
+      if (row.type !== 'more') continue;
+      const y = r * this.rowH;
+      g.fillStyle = withAlpha(t.accent, 0.75);
+      g.textBaseline = 'middle';
+      g.font = `600 ${Math.min(11.5, Math.max(9, this.rowH * 0.6))}px ${font}`;
+      const text = row.dir > 0 ? '+  Add higher notes' : '+  Add lower notes';
+      g.fillText(text, sx + 10, y + this.rowH / 2 + 0.5);
+    }
+
+    if (!this.extendW || this.contentW > sx + this.viewW) return;
+    const x = this.contentW;
+    const h = Math.min(this.contentH, sy + this.viewH);
+    g.fillStyle = withAlpha(t.accent, 0.06);
+    g.fillRect(x, 0, this.extendW, h);
+    g.strokeStyle = withAlpha(t.accent, 0.5);
+    g.setLineDash([4, 4]);
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(Math.round(x) + 0.5, 0);
+    g.lineTo(Math.round(x) + 0.5, h);
+    g.stroke();
+    g.setLineDash([]);
+
+    // Keep the plus centred in whatever part of the column is on screen.
+    const cy = sy + Math.min(this.viewH, this.contentH - sy) / 2;
+    g.fillStyle = withAlpha(t.accent, 0.9);
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = `300 26px ${font}`;
+    g.fillText('+', x + this.extendW / 2, cy - 7);
+    g.font = `600 10px ${font}`;
+    g.fillText('bar', x + this.extendW / 2, cy + 12);
+    g.textAlign = 'left';
+  }
+
+  /** Smallest power-of-two count of bars that spans at least `minPx`. */
+  barStride(minPx) {
+    const barW = stepsPerBar(this.store.project) * this.cellW;
+    let every = 1;
+    while (barW * every < minPx && every < 4096) every *= 2;
+    return every;
   }
 
   colorForMelodyRow(track, row) {
@@ -436,6 +614,22 @@ export class GridView {
     for (let r = r0; r < r1; r++) {
       const row = this.rows[r];
       const y = r * this.rowH;
+      if (row.type === 'more') {
+        g.fillStyle = withAlpha(t.accent, 0.08);
+        g.fillRect(0, y, this.gutter, this.rowH);
+        if (this.rowH >= 9) {
+          g.fillStyle = t.accent;
+          g.fillText(fit(g, row.label, this.gutter - 10), 6, y + this.rowH / 2 + 0.5);
+        }
+        if (row.first) {
+          g.strokeStyle = t.bar;
+          g.beginPath();
+          g.moveTo(0, Math.round(y) + 0.5);
+          g.lineTo(this.gutter, Math.round(y) + 0.5);
+          g.stroke();
+        }
+        continue;
+      }
       g.fillStyle = row.accidental
         ? withAlpha(t.bg, 0.5)
         : withAlpha(row.color, row.type === 'fold' ? 0.2 : 0.1);
@@ -477,16 +671,23 @@ export class GridView {
     g.textBaseline = 'middle';
     g.font = `600 10.5px ${getComputedStyle(document.body).fontFamily}`;
 
+    const steps = totalSteps(this.store.project);
+    const tickEvery = this.barStride(5);
+    const labelEvery = this.barStride(32);
     for (let c = c0; c <= c1; c++) {
       const x = c * this.cellW;
       if (c % bar === 0) {
+        const index = c / bar;
+        if (index % tickEvery !== 0 && c !== steps) continue;
         g.strokeStyle = t.bar;
         g.beginPath();
-        g.moveTo(Math.round(x) + 0.5, 4);
+        g.moveTo(Math.round(x) + 0.5, index % labelEvery === 0 ? 4 : this.ruler - 8);
         g.lineTo(Math.round(x) + 0.5, this.ruler);
         g.stroke();
-        g.fillStyle = t.dim;
-        g.fillText(String(c / bar + 1), x + 4, this.ruler / 2 + 1);
+        if (index % labelEvery === 0 && c < steps) {
+          g.fillStyle = t.dim;
+          g.fillText(String(index + 1), x + 4, this.ruler / 2 + 1);
+        }
       } else if (c % spb === 0 && this.cellW > 16) {
         g.strokeStyle = t.beat;
         g.beginPath();
@@ -494,6 +695,16 @@ export class GridView {
         g.lineTo(Math.round(x) + 0.5, this.ruler);
         g.stroke();
       }
+    }
+
+    if (this.extendW && this.contentW < sx + this.w) {
+      const x = this.contentW;
+      g.fillStyle = withAlpha(t.accent, this.rulerExtendHover ? 0.22 : 0.1);
+      g.fillRect(x + 1, 3, this.extendW - 2, this.ruler - 6);
+      g.fillStyle = t.accent;
+      g.textAlign = 'center';
+      g.fillText('+ bar', x + this.extendW / 2, this.ruler / 2 + 1);
+      g.textAlign = 'left';
     }
 
     if (this.play) {
@@ -547,18 +758,27 @@ export class GridView {
     return {
       step: Math.max(0, Math.min(totalSteps(p) - 1, Math.floor(x / this.cellW))),
       visual: Math.max(0, Math.min(this.rows.length - 1, Math.floor(y / this.rowH))),
+      inExtend: this.extendW > 0 && x >= this.contentW,
       x, y,
     };
   }
 
   _onWheel(e) {
-    if (!(e.ctrlKey || e.metaKey)) return;
-    e.preventDefault();
-    this.setZoom(this.zoom * (e.deltaY < 0 ? 1.12 : 0.89));
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      this.setZoom(this.zoom * (e.deltaY < 0 ? 1.12 : 0.89));
+      return;
+    }
+    // Nothing to scroll vertically? Then the wheel travels through the song.
+    const vertical = Math.abs(e.deltaY) > Math.abs(e.deltaX);
+    if (vertical && !e.shiftKey && this.contentH <= this.viewH + 1) {
+      e.preventDefault();
+      this.scroller.scrollLeft += e.deltaY;
+    }
   }
 
   setZoom(z) {
-    this.zoom = Math.max(0.55, Math.min(2.6, z));
+    this.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z));
     this.layout();
     this.invalidate();
   }
@@ -572,6 +792,20 @@ export class GridView {
 
     this.scroller.setPointerCapture?.(e.pointerId);
     this.hooks.onFirstTouch?.();
+
+    // "+ Add higher / lower notes" rows grow the pitch range.
+    if (row.type === 'more') {
+      this.hooks.onMoreNotes?.(row.dir);
+      return;
+    }
+
+    // The "+ bar" column after the end makes the song longer — and drawing
+    // into it lands the note at the start of the new bar.
+    if (hit.inExtend && e.button !== 2) {
+      const drawing = this.store.ui.tool === 'draw' && !e.shiftKey && isNoteRow(row);
+      this.extendSong(drawing ? row : null);
+      return;
+    }
 
     // Folded track: one tap unfolds it.
     if (row.type === 'fold') {
@@ -650,7 +884,7 @@ export class GridView {
 
     if (this.drag.mode === 'erase') {
       const row = this.rows[hit.visual];
-      if (row && row.type !== 'fold') this._eraseAt(row, hit.step);
+      if (isNoteRow(row) && !hit.inExtend) this._eraseAt(row, hit.step);
       return;
     }
 
@@ -666,7 +900,7 @@ export class GridView {
       return;
     }
     const target = this.rows[hit.visual];
-    if (!target || target.type === 'fold') return;
+    if (!isNoteRow(target) || hit.inExtend) return;
     const key = `${target.track.id}:${target.row}:${hit.step}`;
     if (this.drag.painted.has(key)) return;
     this.drag.painted.add(key);
@@ -712,7 +946,7 @@ export class GridView {
     const out = [];
     for (let v = sel.r0; v <= sel.r1; v++) {
       const row = this.rows[v];
-      if (!row || row.type === 'fold') continue;
+      if (!isNoteRow(row)) continue;
       const notes = notesOf(pattern, row.track.id);
       const found = notes.filter((n) => n.p === row.row && n.s >= sel.s0 && n.s <= sel.s1);
       if (!found.length) continue;

@@ -37,9 +37,13 @@ export function generate(project, track, style, pitches) {
   const bars = project.bars;
   // Row indices of the in-scale notes, low to high.
   const scaleRows = pitches.map((_, i) => i).filter((i) => pitches[i].inScale !== false);
+  // Degree 0 sits at middle C (or the lowest note, if the ladder starts above
+  // it) — so adding lower octaves never drags generated parts into the mud.
+  const middle = scaleRows.findIndex((i) => pitches[i].midi >= 60);
   const ctx = {
     project, track, steps, spb, bar, bars,
     pitches, scaleRows,
+    anchor: Math.max(0, middle),
     perOct: getScale(project.scale).steps.length,
   };
 
@@ -115,7 +119,7 @@ function progression(bars) {
 function degreeToRow(deg, ctx, octaveBias = 0) {
   const rows = ctx.scaleRows;
   if (!rows.length) return 0;
-  const i = Math.round(deg) + octaveBias * ctx.perOct;
+  const i = ctx.anchor + Math.round(deg) + octaveBias * ctx.perOct;
   return rows[Math.max(0, Math.min(rows.length - 1, i))];
 }
 
@@ -219,17 +223,17 @@ function melodyTune(ctx) {
   // Land on the tonic, in whichever octave the phrase ended up.
   const last = notes[notes.length - 1];
   if (last) {
-    const reached = ctx.scaleRows.indexOf(last.p);
+    const reached = ctx.scaleRows.indexOf(last.p) - ctx.anchor;
     last.p = degreeToRow(0, ctx, Math.floor(Math.max(0, reached) / perOct));
   }
   return notes;
 }
 
 function melodySparkle(ctx) {
-  const { steps, spb, perOct, scaleRows } = ctx;
+  const { steps, spb, perOct } = ctx;
   const notes = [];
   const step = Math.max(1, Math.round(spb / 2));
-  const lowest = Math.max(0, scaleRows.length - perOct - 1);
+  const lowest = perOct;                 // an octave above home, in degrees
   for (let s = 0; s < steps; s += step) {
     if (!chance(0.3)) continue;
     notes.push({

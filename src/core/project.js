@@ -2,6 +2,12 @@
 
 export const PROJECT_VERSION = 1;
 export const PATTERN_COUNT = 8;
+
+/* How far a song can grow. 999 bars is over half an hour at most tempos. */
+export const MAX_BARS = 999;
+/* The pitch ladder can reach from C1 up to the octave that starts at C8. */
+export const LOWEST_OCTAVE = 1;
+export const TOP_OCTAVE = 8;
 export const PATTERN_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
 /* ------------------------------------------------------------------ *
@@ -206,6 +212,26 @@ export function createDemoProject() {
 export const stepsPerBar = (p) => p.beatsPerBar * p.splits;
 export const totalSteps = (p) => p.bars * p.beatsPerBar * p.splits;
 
+/** Whether the pitch ladder can grow another octave up and/or down. */
+export function rangeRoom(p) {
+  return {
+    up: p.octave + p.octaves < TOP_OCTAVE,
+    down: p.octave > LOWEST_OCTAVE,
+  };
+}
+
+/** The bar after which every pattern is silent — where "trim" cuts to. */
+export function lastUsedBar(p) {
+  const bar = stepsPerBar(p);
+  let end = 0;
+  for (const pattern of p.patterns) {
+    for (const notes of Object.values(pattern.notes || {})) {
+      for (const n of notes) end = Math.max(end, n.s + 1);
+    }
+  }
+  return Math.ceil(end / bar);
+}
+
 export function activePattern(p) {
   return p.patterns[p.patternIndex] || p.patterns[0];
 }
@@ -333,11 +359,11 @@ export function unpackProject(raw) {
   p.patternIndex = Math.min(PATTERN_COUNT - 1, Math.max(0, p.patternIndex | 0));
   p.arrangement = (raw.arrangement || []).filter((i) => Number.isInteger(i) && i >= 0 && i < PATTERN_COUNT);
   if (!p.tracks.some((t) => t.id === p.selected)) p.selected = p.tracks[0].id;
-  p.bars = clampInt(p.bars, 1, 16);
+  p.bars = clampInt(p.bars, 1, MAX_BARS);
   p.beatsPerBar = clampInt(p.beatsPerBar, 1, 12);
   p.splits = clampInt(p.splits, 1, 6);
-  p.octaves = clampInt(p.octaves, 1, 4);
-  p.octave = clampInt(p.octave, 1, 7);
+  p.octave = clampInt(p.octave, LOWEST_OCTAVE, TOP_OCTAVE - 1);
+  p.octaves = clampInt(p.octaves, 1, TOP_OCTAVE - p.octave);
   p.tempo = clampInt(p.tempo, 40, 240);
   return p;
 }

@@ -5,6 +5,7 @@ import {
   stepsPerBar, findTrack, getKit, createTrack, instrumentName,
   MELODY_INSTRUMENTS, DRUM_KITS, TRACK_COLORS,
   PATTERN_LETTERS, PATTERN_COUNT, cloneProject, packProject, unpackProject,
+  MAX_BARS, rangeRoom, lastUsedBar, remapNotesToLadder,
 } from './core/project.js';
 import { buildPitchList, snapToLadder, freqToMidi } from './core/scales.js';
 import { createStore } from './core/state.js';
@@ -12,7 +13,7 @@ import { generate } from './core/generate.js';
 import * as store$ from './core/storage.js';
 import { exportMidi, MidiIn } from './core/midi.js';
 import { Rig, Transport, stepSeconds } from './audio/engine.js';
-import { renderProject, encodeWav } from './audio/render.js';
+import { renderProject, encodeWav, songSteps } from './audio/render.js';
 import { MicPitch } from './audio/mic.js';
 import { GridView } from './ui/grid.js';
 import { Rail } from './ui/rail.js';
@@ -54,6 +55,9 @@ const grid = new GridView({
     onEdit: () => { markDirty(); updatePatternPills(); },
     onEditCommitted: () => markDirty(),
     onScrub: (step) => scrubTo(step),
+    // The grid has already taken the undo snapshot for these two.
+    onExtend: (bars) => { setBars(store.project.bars + bars, { snapshot: false }); },
+    onMoreNotes: (dir) => addNoteRange(dir),
   },
 });
 
@@ -150,6 +154,7 @@ function refreshLayout() {
   grid.clearSelection();
   grid.refresh();
   syncSoundPickers();
+  syncLength();
   updatePatternPills();
   updateChain();
   if (!audio?.transport.playing) refreshPlayhead();
@@ -168,6 +173,7 @@ function adoptProject() {
   grid.refresh();
   syncTransportUI();
   syncSoundPickers();
+  syncLength();
   updatePatternPills();
   updateChain();
   audio?.rig.syncTracks(store.project);
@@ -183,7 +189,11 @@ function adoptProject() {
 }
 
 store.subscribe((kind) => {
-  if (kind === 'project') adoptProject();
+  if (kind !== 'project') return;
+  adoptProject();
+  // Undo, redo and opening a song all replace the project — autosave it too,
+  // or closing the tab would bring back what was just undone.
+  markDirty();
 });
 
 function markDirty() {
@@ -215,6 +225,100 @@ function hideHint() {
   const hint = $('stage-hint');
   if (hint && !hint.classList.contains('gone')) hint.classList.add('gone');
 }
+
+/* ------------------------------------------------------------------ *
+ * Song length and note range
+ * ------------------------------------------------------------------ */
+
+/**
+ * Set the song length. Shortening hides notes past the new end rather than
+ * deleting them, so making it longer again brings them back.
+ */
+function setBars(n, { snapshot = true } = {}) {
+  const p = store.project;
+  const bars = Math.max(1, Math.min(MAX_BARS, Math.round(Number(n)) || 1));
+  if (bars === p.bars) { syncLength(); return; }
+  if (snapshot) store.snapshot('bars');
+  p.bars = bars;
+  if (snapshot) store.endGesture();
+  // A playhead past the new end goes back to the top.
+  if (audio && !audio.transport.playing && audio.transport.current().absStep >= songSteps(p)) {
+    audio.transport.seek(0);
+  }
+  refreshLayout();
+}
+
+function syncLength() {
+  const p = store.project;
+  const input = $('len-bars');
+  if (document.activeElement !== input) input.value = String(p.bars);
+  $('len-unit').textContent = p.bars === 1 ? 'bar' : 'bars';
+  $('btn-len-dec').disabled = p.bars <= 1;
+  $('btn-len-inc').disabled = p.bars >= MAX_BARS;
+}
+
+/** Grow the pitch ladder by an octave, keeping every note on its pitch. */
+function addNoteRange(dir) {
+  const p = store.project;
+  const room = rangeRoom(p);
+  if ((dir > 0 && !room.up) || (dir < 0 && !room.down)) return;
+  store.snapshot('range');
+  const before = buildPitchList(p);
+  if (dir < 0) p.octave -= 1;
+  p.octaves += 1;
+  remapNotesToLadder(p, before, buildPitchList(p));
+  store.endGesture();
+  refreshLayout();
+  toast(dir > 0 ? 'Added an octave of higher notes' : 'Added an octave of lower notes', { ms: 1400 });
+}
+
+/** The row the home-row keys and previews start from: middle C, or near it. */
+function homeRow() {
+  const i = pitchList.findIndex((pitch) => pitch.midi >= 60);
+  return i < 0 ? 0 : Math.max(0, Math.min(i, pitchList.length - 1));
+}
+
+/** Hold + or − to keep stepping, faster the longer it is held. */
+function holdToRepeat(button, step) {
+  let timer = 0;
+  let delay = 0;
+  const tick = () => {
+    step();
+    delay = Math.max(40, delay * 0.82);
+    timer = setTimeout(tick, delay);
+  };
+  const start = (e) => {
+    if (e.button !== undefined && e.button !== 0) return;
+    e.preventDefault();
+    store.snapshot('bars-hold');
+    step();
+    delay = 380;
+    timer = setTimeout(tick, delay);
+  };
+  const stopHold = () => {
+    if (!timer) return;
+    clearTimeout(timer);
+    timer = 0;
+    store.endGesture();
+  };
+  button.addEventListener('pointerdown', start);
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) button.addEventListener(ev, stopHold);
+  // Keyboard users get one step per press.
+  button.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      setBars(store.project.bars + (button.id === 'btn-len-inc' ? 1 : -1));
+    }
+  });
+}
+
+holdToRepeat($('btn-len-inc'), () => setBars(store.project.bars + 1, { snapshot: false }));
+holdToRepeat($('btn-len-dec'), () => setBars(store.project.bars - 1, { snapshot: false }));
+$('len-bars').addEventListener('change', (e) => setBars(e.target.value));
+$('len-bars').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') e.target.blur();
+  e.stopPropagation();          // typing digits must not trigger shortcuts
+});
 
 /* ------------------------------------------------------------------ *
  * Transport UI
@@ -588,8 +692,9 @@ window.addEventListener('keydown', (e) => {
     const p = store.project;
     const track = findTrack(p, p.selected);
     const offset = e.shiftKey ? 7 : 0;
-    const maxRow = track.type === 'drums' ? getKit(track.instrument).pieces.length - 1 : pitchList.length - 1;
-    const row = Math.min(maxRow, idx + offset);
+    const drums = track.type === 'drums';
+    const maxRow = drums ? getKit(track.instrument).pieces.length - 1 : pitchList.length - 1;
+    const row = Math.min(maxRow, (drums ? 0 : homeRow()) + idx + offset);
     heldKeys.set(key, row);
     ensureAudio();
     preview(track, row, 0.9);
@@ -759,7 +864,8 @@ function previewInstrument(track) {
       a.rig.trigger(track, { s: 0, p: row, l: 1, v: 0.9 }, t + delay, pitchList, dur);
     }
   } else {
-    const notes = [0, 2, 4].map((d) => Math.min(pitchList.length - 1, d));
+    const home = homeRow();
+    const notes = [0, 2, 4].map((d) => Math.min(pitchList.length - 1, home + d));
     notes.forEach((row, i) => {
       a.rig.trigger(track, { s: 0, p: row, l: 2, v: 0.85 }, t + i * 0.13, pitchList, dur);
     });
@@ -844,6 +950,14 @@ function openPatternMenu(anchor) {
       grid.invalidate();
       updatePatternPills();
       markDirty();
+    }],
+    ['Add 4 bars to the end', () => setBars(p.bars + 4)],
+    ['Trim empty bars from the end', () => {
+      const used = Math.max(1, lastUsedBar(p));
+      if (used >= p.bars) return toast('No empty bars at the end');
+      const cut = p.bars - used;
+      setBars(used);
+      toast(`Trimmed ${cut} empty bar${cut === 1 ? '' : 's'}`);
     }],
     ['Double the notes (fill the bars)', () => {
       store.snapshot('double');
@@ -1025,6 +1139,12 @@ $('btn-export-wav').addEventListener('click', async () => {
   setProgress(0.02);
   try {
     const loops = Number($('export-loops').value) || 2;
+    const minutes = (songSteps(store.project) * loops * stepSeconds(store.project)) / 60;
+    if (minutes > 12) {
+      toast(`That is ${Math.round(minutes)} minutes of audio — too long to render in the browser. `
+        + 'Lower the repeats, or export MIDI instead.', { error: true, ms: 5200 });
+      return;
+    }
     const buffer = await renderProject(store.project, pitchList, { loops, onProgress: setProgress });
     const blob = encodeWav(buffer);
     await saveBlob(blob, store$.safeFileName(store.project.name) + '.wav');

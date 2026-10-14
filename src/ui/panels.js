@@ -1,7 +1,10 @@
 /* Slide-over panels: song settings, mixer/FX, share/export, help. */
 
 import { SCALES, NOTE_NAMES, NOTE_NAMES_FLAT, buildPitchList } from '../core/scales.js';
-import { THEMES, instrumentName, rescaleNotes, remapNotesToLadder } from '../core/project.js';
+import {
+  THEMES, instrumentName, rescaleNotes, remapNotesToLadder,
+  MAX_BARS, LOWEST_OCTAVE, TOP_OCTAVE,
+} from '../core/project.js';
 
 const PANELS = ['settings', 'mixer', 'export', 'help'];
 
@@ -60,9 +63,8 @@ export class Panels {
 
     fill(this.s.scale, SCALES.map((s) => [s.id, s.name]));
     this.fillRoots();
-    fill(this.s.octave, [2, 3, 4, 5, 6].map((n) => [n, `Octave ${n}`]));
-    fill(this.s.octaves, [1, 2, 3, 4].map((n) => [n, n === 1 ? '1 octave' : `${n} octaves`]));
-    fill(this.s.bars, range(1, 16).map((n) => [n, String(n)]));
+    fill(this.s.octave, range(LOWEST_OCTAVE, TOP_OCTAVE - 1).map((n) => [n, `Octave ${n}`]));
+    fill(this.s.octaves, range(1, TOP_OCTAVE - LOWEST_OCTAVE).map((n) => [n, n === 1 ? '1 octave' : `${n} octaves`]));
     fill(this.s.beats, range(1, 12).map((n) => [n, String(n)]));
     const SPLIT_LABELS = { 1: 'Whole beats', 2: 'Halves (8ths)', 3: 'Triplets', 4: 'Quarters (16ths)', 6: 'Sixths' };
     fill(this.s.splits, [1, 2, 3, 4, 6].map((n) => [n, SPLIT_LABELS[n]]));
@@ -76,10 +78,19 @@ export class Panels {
         this.store.snapshot('setting-' + f);
         const key = keyMap[f] || f;
         const raw = this.s[f].value;
-        const value = /^\d+$/.test(raw) ? Number(raw) : raw;
+        let value = /^\d+$/.test(raw) ? Number(raw) : raw;
+        if (f === 'bars') {
+          value = Math.max(1, Math.min(MAX_BARS, Math.round(Number(raw)) || 1));
+          this.s.bars.value = String(value);
+        }
         // A finer or coarser subdivision should keep the rhythm, not shift it.
         if (f === 'splits' && value !== p.splits) rescaleNotes(p, value / p.splits);
         p[key] = value;
+        // The ladder cannot run past the top of the piano.
+        if (f === 'octave' || f === 'octaves') {
+          p.octaves = Math.max(1, Math.min(p.octaves, TOP_OCTAVE - p.octave));
+          this.s.octaves.value = String(p.octaves);
+        }
         this.store.endGesture();
         this.hooks.onLayout();
       });

@@ -51,8 +51,15 @@ synthesised in the browser, so it loads instantly and keeps working offline.
 
 - 14 scales (major, minor, harmonic minor, two pentatonics, blues, four modes,
   hirajoshi, arabic, whole tone, chromatic) in any key, 1–4 octaves.
-- 1–16 bars, 1–12 beats per bar, beats split into halves, triplets, quarters or
-  sixths.
+- Songs as long as you like — up to 999 bars. There is always a **+ bar** column
+  after the last bar (click it, or draw into it to add a bar with your note in
+  it), and the length control in the top bar takes a number or keeps going while
+  you hold **+**. Shortening never deletes notes: they come back when the song
+  grows again, and *Trim empty bars* tidies the end.
+- **More notes on demand:** every melody track has *+ higher* and *+ lower* rows
+  that add an octave each time, from the lowest C on a piano to the highest.
+  Notes stay on their pitches as the range grows; zoom out and scroll to travel.
+- 1–12 beats per bar, beats split into halves, triplets, quarters or sixths.
 - **8 patterns** per song, chained into an arrangement — switch the transport
   from *Loop* to *Song* to play the whole thing.
 - The playhead stays put when you pause, and drags along the bar ruler to any
